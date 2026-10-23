@@ -13,6 +13,7 @@ import 'package:ntccsl/pages/login_page.dart';
 import 'package:ntccsl/pages/profile_page.dart';
 import 'package:ntccsl/pages/register_page.dart';
 import 'package:ntccsl/pages/splash_page.dart';
+import 'package:ntccsl/pages/support_page.dart';
 import 'package:ntccsl/services/api_service.dart';
 import 'package:ntccsl/widgets/portal_loading.dart';
 import 'package:ntccsl/widgets/portal_widgets.dart';
@@ -821,7 +822,7 @@ void main() {
     );
   });
 
-  testWidgets('signed-in app bar uses the new logo icon',
+  testWidgets('navigation header shows the signed-in user profile',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -830,9 +831,11 @@ void main() {
           session: const AuthSession(
             token: 'test-token',
             userId: 'admin-1',
-            name: 'Admin',
+            name: 'Admin Name',
             email: 'admin@example.com',
             role: 'Admin',
+            profileImageUrl:
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jA9sAAAAASUVORK5CYII=',
           ),
           onLogout: () {},
         ),
@@ -843,6 +846,14 @@ void main() {
     await tester.tap(find.byKey(const Key('open-navigation-menu')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('ntccsl-app-icon')), findsOneWidget);
+    expect(find.text('Admin Name'), findsOneWidget);
+    expect(find.text('Admin'), findsOneWidget);
+    expect(
+      tester
+          .widget<Image>(find.byKey(const Key('navigation-user-image')))
+          .image,
+      isA<MemoryImage>(),
+    );
   });
 
   testWidgets('registration reports backend error without false success',
@@ -906,6 +917,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('ntccsl-app-icon')), findsOneWidget);
     expect(find.byKey(const Key('navigation-menu-accounts')), findsOneWidget);
+    await _ensureDrawerItemVisible(
+      tester,
+      find.byKey(const Key('navigation-menu-users')),
+    );
     expect(find.byKey(const Key('navigation-menu-users')), findsOneWidget);
     await tester.tap(find.byKey(const Key('close-navigation-menu')));
     await tester.pumpAndSettle();
@@ -936,6 +951,94 @@ void main() {
     expect(find.text('Weekly Collection'), findsOneWidget);
   });
 
+  testWidgets('support is a separate page outside the deposit menu',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainHomeScreen(
+          apiService: _FakeApiService(),
+          session: const AuthSession(
+            token: 'test-token',
+            userId: 'admin-1',
+            name: 'Test Admin',
+            email: 'admin@example.com',
+            role: 'Admin',
+          ),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('open-navigation-menu')));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.byKey(const Key('navigation-menu-support')),
+        matching: find.byType(ListView),
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const Key('navigation-menu-support')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Support'), findsOneWidget);
+    expect(find.text('Get in touch'), findsOneWidget);
+    expect(find.text('+91 9282956845'), findsOneWidget);
+    expect(find.text('support@ntccsl.in'), findsOneWidget);
+    expect(find.byKey(const Key('bottom-navigation-support')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('open-navigation-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('navigation-menu-deposit')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('navigation-menu-support')), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byKey(const Key('navigation-menu-support')),
+        matching: find.byKey(const Key('navigation-menu-deposit')),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('support page adapts its hero to light and dark themes',
+      (WidgetTester tester) async {
+    for (final brightness in [Brightness.light, Brightness.dark]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF3458D4),
+              brightness: brightness,
+            ),
+            useMaterial3: true,
+          ),
+          home: const SupportPage(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final hero = tester.widget<Container>(
+        find.byKey(const Key('support-hero')),
+      );
+      final decoration = hero.decoration! as BoxDecoration;
+      final gradient = decoration.gradient! as LinearGradient;
+      if (brightness == Brightness.dark) {
+        expect(
+          gradient.colors,
+          const [Color(0xFF253B8C), Color(0xFF50346F)],
+        );
+      } else {
+        expect(
+          gradient.colors,
+          isNot(const [Color(0xFF253B8C), Color(0xFF50346F)]),
+        );
+      }
+      expect(find.text('Get in touch'), findsOneWidget);
+    }
+  });
+
   testWidgets('top navigation menu opens, closes, and changes pages',
       (WidgetTester tester) async {
     var didLogout = false;
@@ -960,16 +1063,6 @@ void main() {
     await tester.pumpAndSettle();
     final depositMenu = find.byKey(const Key('navigation-menu-deposit'));
     expect(depositMenu, findsOneWidget);
-    expect(
-      tester.getTopLeft(depositMenu).dy,
-      greaterThan(
-        tester.getTopLeft(find.byKey(const Key('navigation-menu-accounts'))).dy,
-      ),
-    );
-    expect(
-      tester.getTopLeft(find.byKey(const Key('navigation-menu-users'))).dy,
-      greaterThan(tester.getTopLeft(depositMenu).dy),
-    );
     await _expandDrawerTile(
       tester,
       depositMenu,

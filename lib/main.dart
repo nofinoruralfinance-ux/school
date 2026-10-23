@@ -10,9 +10,11 @@ import 'pages/login_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/roles_permissions_page.dart';
 import 'pages/splash_page.dart';
+import 'pages/support_page.dart';
 import 'pages/users_page.dart';
 import 'services/api_service.dart';
 import 'widgets/portal_widgets.dart';
+import 'widgets/profile_image.dart';
 
 const _depositRoutes = <String, int>{
   'fd-monthly': 7,
@@ -297,6 +299,13 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   ];
 
   void _selectPage(int index) {
+    if (index == _supportPageIndex) {
+      setState(() {
+        _selectedIndex = index;
+        _visitedPages.add(index);
+      });
+      return;
+    }
     if (!_visiblePageIndices.contains(index)) return;
     setState(() {
       _selectedIndex = index;
@@ -308,7 +317,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
       _canViewCollections && widget.session.canViewReport(cadence);
 
   List<int> get _availableDepositRoutes =>
-      _visiblePageIndices.where((index) => index >= 7).toList();
+      _visiblePageIndices.where((index) => index >= 7 && index <= 12).toList();
 
   List<
       ({
@@ -361,12 +370,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
 
   int get _selectedBottomNavigationIndex {
     final items = _bottomNavigationItems;
-    final index = items.indexWhere(
-      (item) => item.pageIndex == (_selectedIndex >= 7 ? null : _selectedIndex),
-    );
+    final index = items.indexWhere((item) => item.pageIndex == _selectedIndex);
     if (index >= 0) return index;
     final depositIndex = items.indexWhere((item) => item.pageIndex == null);
-    return _selectedIndex >= 7 && depositIndex >= 0 ? depositIndex : 0;
+    return _selectedIndex >= 7 && _selectedIndex <= 12 && depositIndex >= 0
+        ? depositIndex
+        : 0;
   }
 
   void _onBottomNavigationSelected(int destinationIndex) {
@@ -641,6 +650,8 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     Color(0xFFB45309),
   ];
 
+  static const _supportPageIndex = 13;
+
   static const _titles = [
     'Dashboard',
     'Amounts Ledger',
@@ -655,6 +666,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     'DRD Daily',
     'DRD Weekly',
     'DRD Monthly',
+    'Support',
   ];
 
   List<Widget> get _pages => [
@@ -720,12 +732,22 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
             product: route.$1,
             cadence: route.$2,
           ),
+        SupportPage(
+          key: ValueKey('support-$_refreshVersion'),
+          apiService: widget.apiService,
+          session: widget.session,
+        ),
       ];
 
   @override
   Widget build(BuildContext context) {
     final pages = _pages;
     final headerGradient = portalHeaderGradient(context);
+    final displayName = widget.session.name.trim().isEmpty
+        ? 'Portal user'
+        : widget.session.name.trim();
+    final profileInitial = displayName.characters.first.toUpperCase();
+    final profileImage = profileImageProvider(widget.session.profileImageUrl);
     return Scaffold(
       appBar: AppBar(
         flexibleSpace: DecoratedBox(
@@ -815,12 +837,43 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.asset(
-                          'assets/images/ntccsl_logo.png',
+                        child: SizedBox(
                           key: const Key('ntccsl-app-icon'),
-                          width: 44,
-                          height: 44,
-                          fit: BoxFit.cover,
+                          width: 52,
+                          height: 52,
+                          child: profileImage == null
+                              ? ColoredBox(
+                                  color: Colors.white.withValues(alpha: .18),
+                                  child: Center(
+                                    child: Text(
+                                      profileInitial,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : Image(
+                                  key: const Key('navigation-user-image'),
+                                  image: profileImage,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      ColoredBox(
+                                    color: Colors.white.withValues(alpha: .18),
+                                    child: Center(
+                                      child: Text(
+                                        profileInitial,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -830,27 +883,33 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                           children: [
                             const Text(
                               'NTCCSL FINANCE SYSTEM',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
+                                color: Colors.white70,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w800,
+                                letterSpacing: .6,
                               ),
                             ),
-                            const SizedBox(height: 4),
                             Text(
-                              widget.session.name,
+                              displayName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              widget.session.role,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              widget.session.role,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: .82),
                                 fontSize: 12,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -952,6 +1011,34 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                       if (index == 5 || index == 6)
                         _navigationMenuTile(context, index),
                   ],
+                ),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: ListTile(
+                  key: const Key('navigation-menu-support'),
+                  selected: _selectedIndex == _supportPageIndex,
+                  selectedTileColor:
+                      Theme.of(context).colorScheme.primaryContainer,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  leading: CircleAvatar(
+                    radius: 18,
+                    backgroundColor:
+                        const Color(0xFF3458D4).withValues(alpha: .12),
+                    child: const Icon(
+                      Icons.support_agent_rounded,
+                      color: Color(0xFF3458D4),
+                      size: 20,
+                    ),
+                  ),
+                  title: const Text('Support'),
+                  onTap: () {
+                    _selectPage(_supportPageIndex);
+                    Navigator.of(context).pop();
+                  },
                 ),
               ),
               ListTile(
