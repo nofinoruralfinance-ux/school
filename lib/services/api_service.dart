@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 const String kGoogleAppScriptUrl = String.fromEnvironment(
   'GOOGLE_SCRIPT_URL',
   defaultValue:
-      'https://script.google.com/macros/s/AKfycbzTyeGbg6swtTAumqN8oGSdEtJ0uNG5MuW3H1UW1lO3iy1AbdxGQlKZkCqYfa0JEVDd/exec',
+      'https://script.google.com/macros/s/AKfycbyCCQe89Vz0M1e0d9Ln-FWqxc5q6skS4njll-OVE1-fWG-7Hvt_W-Vuo8xQTuX8tjg/exec',
 );
 
 class AuthSession {
