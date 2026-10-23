@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 const String kGoogleAppScriptUrl = String.fromEnvironment(
   'GOOGLE_SCRIPT_URL',
   defaultValue:
-      'https://script.google.com/macros/s/AKfycbxnUubX9aDDH87efCPg9SSFGjXCe_sC8rrNaFsN8MAtrFHvmwLbzbYpRi3QiXOKCRnw/exec',
+      'https://script.google.com/macros/s/AKfycbymG8LIeRjaLqBLxny1OAmrb0k8LBen4w-nhSRTxFJLTg5acjWALwFWQHDUStYsWvgs/exec',
 );
 
 class AuthSession {
@@ -272,6 +272,27 @@ class ApiService {
     return data;
   }
 
+  Future<List<Map<String, dynamic>>> fetchDepositAccounts({
+    required String product,
+    required String cadence,
+    required AuthSession session,
+  }) async {
+    final data = await _request({
+      'action': 'getDepositAccounts',
+      'token': session.token,
+      'product': product,
+      'cadence': cadence,
+    });
+    if (data is! List || data.any((record) => record is! Map)) {
+      throw const ApiException(
+        'The server returned invalid deposit account data.',
+      );
+    }
+    return data
+        .map((record) => Map<String, dynamic>.from(record as Map))
+        .toList();
+  }
+
   Future<Map<String, Map<String, bool>>> fetchRolePermissions(
     AuthSession session,
   ) async {
@@ -296,13 +317,15 @@ class ApiService {
           'shared_data_read',
           'own_collection_read',
           'collection_manage',
+          'deposit_view',
+          'deposit_manage',
           'ledger_manage',
           'user_manage',
         ])
           if (settings[permission] is bool)
             permission: settings[permission] as bool,
       };
-      if (result[role]!.length != 5) {
+      if (result[role]!.length != 7) {
         throw ApiException(
             'The server returned incomplete settings for $role.');
       }

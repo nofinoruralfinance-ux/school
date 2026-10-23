@@ -231,7 +231,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 FilledButton.icon(
                   key: const Key('edit-profile'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: Colors.green.shade400,
+                    backgroundColor: portalEditColor,
                     foregroundColor: Colors.white,
                   ),
                   onPressed: _editProfile,

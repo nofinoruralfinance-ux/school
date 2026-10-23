@@ -49,8 +49,24 @@ class _DashboardPageState extends State<DashboardPage> {
     final canReadUsers = !_isMember &&
         (widget.session.hasPermission('shared_data_read') ||
             widget.session.hasPermission('user_manage'));
+    final canReadDepositAccounts =
+        widget.session.hasPermission('deposit_view') ||
+            widget.session.hasPermission('deposit_manage');
     final canReadRolePermissions =
         canReadUsers && widget.session.role.toLowerCase() == 'admin';
+    const depositReports = <(String, String, int)>[
+      ('FD', 'monthly', 7),
+      ('RD', 'weekly', 8),
+      ('RD', 'monthly', 9),
+      ('DRD', 'daily', 10),
+      ('DRD', 'weekly', 11),
+      ('DRD', 'monthly', 12),
+    ];
+    final availableDepositReports = canReadDepositAccounts
+        ? depositReports
+            .where((report) => widget.session.canViewReport(report.$2))
+            .toList()
+        : const <(String, String, int)>[];
 
     final roleAccessFuture = canReadRolePermissions
         ? _loadRolePermissions()
@@ -78,6 +94,11 @@ class _DashboardPageState extends State<DashboardPage> {
           ? _loadRecords('getUsers', 'Users')
           : Future.value(const _DashboardRecords(label: 'Users')),
     ]);
+    final depositResults = await Future.wait(
+      availableDepositReports.map(
+        (report) => _loadDepositRecords(report.$1, report.$2),
+      ),
+    );
     final roleAccess = await roleAccessFuture;
     return _DashboardData(
       ledger: results[0],
@@ -85,9 +106,35 @@ class _DashboardPageState extends State<DashboardPage> {
       weekly: results[2],
       monthly: results[3],
       users: results[4],
+      deposits: [
+        for (var index = 0; index < availableDepositReports.length; index++)
+          _DashboardDepositReport(
+            product: availableDepositReports[index].$1,
+            cadence: availableDepositReports[index].$2,
+            pageIndex: availableDepositReports[index].$3,
+            result: depositResults[index],
+          ),
+      ],
       rolePermissions: roleAccess.permissions,
       rolePermissionsError: roleAccess.error,
     );
+  }
+
+  Future<_DashboardRecords> _loadDepositRecords(
+    String product,
+    String cadence,
+  ) async {
+    final label = '$product ${cadence[0].toUpperCase()}${cadence.substring(1)}';
+    try {
+      final records = await widget.apiService.fetchDepositAccounts(
+        product: product,
+        cadence: cadence,
+        session: widget.session,
+      );
+      return _DashboardRecords(label: label, records: records);
+    } catch (error) {
+      return _DashboardRecords(label: label, error: error.toString());
+    }
   }
 
   Future<_RoleAccessData> _loadRolePermissions() async {
@@ -205,6 +252,7 @@ class _DashboardPageState extends State<DashboardPage> {
               final failures = data.sources
                   .where((source) => source.error != null)
                   .toList(growable: false);
+              final availableDeposits = data.deposits;
 
               return RefreshIndicator(
                 onRefresh: _refresh,
@@ -326,6 +374,19 @@ class _DashboardPageState extends State<DashboardPage> {
                       result: data.monthly,
                       onOpen: () => widget.onNavigate(4),
                     ),
+                    if (availableDeposits.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      const _SectionTitle(
+                        title: 'Deposit accounts',
+                        trailing: 'Estimated maturity value',
+                      ),
+                      const SizedBox(height: 10),
+                      for (final report in availableDeposits)
+                        _DepositSummaryCard(
+                          report: report,
+                          onOpen: () => widget.onNavigate(report.pageIndex),
+                        ),
+                    ],
                     const SizedBox(height: 12),
                     _SectionTitle(
                       title: 'Recent ledger activity',
@@ -482,6 +543,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   (total, result) => total + result.received,
                 ),
               );
+    final depositReports = data.deposits;
     return RefreshIndicator(
       onRefresh: _refresh,
       child: ListView(
@@ -524,6 +586,20 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               _MemberReportDetails(result: report.$5),
             ],
+          if (depositReports.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const _SectionTitle(
+              title: 'My deposit accounts',
+              trailing: 'Estimated maturity value',
+            ),
+            const SizedBox(height: 10),
+            for (final report in depositReports)
+              _DepositSummaryCard(
+                report: report,
+                onOpen: () => widget.onNavigate(report.pageIndex),
+                memberView: true,
+              ),
+          ],
         ],
       ),
     );
@@ -765,6 +841,7 @@ class _DashboardData {
     required this.weekly,
     required this.monthly,
     required this.users,
+    required this.deposits,
     this.rolePermissions,
     this.rolePermissionsError,
   });
@@ -774,11 +851,140 @@ class _DashboardData {
   final _DashboardRecords weekly;
   final _DashboardRecords monthly;
   final _DashboardRecords users;
+  final List<_DashboardDepositReport> deposits;
   final Map<String, Map<String, bool>>? rolePermissions;
   final String? rolePermissionsError;
 
   List<_DashboardRecords> get sources =>
-      [ledger, daily, weekly, monthly, users];
+      [
+        ledger,
+        daily,
+        weekly,
+        monthly,
+        users,
+        ...deposits.map((item) => item.result),
+      ];
+}
+
+class _DashboardDepositReport {
+  const _DashboardDepositReport({
+    required this.product,
+    required this.cadence,
+    required this.pageIndex,
+    required this.result,
+  });
+
+  final String product;
+  final String cadence;
+  final int pageIndex;
+  final _DashboardRecords result;
+
+  String get title => switch (product) {
+        'FD' => 'Fixed Deposit — Monthly',
+        'RD' => 'Recurring Deposit — ${_capitalize(cadence)}',
+        _ => 'Daily Recurring Deposit — ${_capitalize(cadence)}',
+      };
+
+  static String _capitalize(String value) =>
+      value[0].toUpperCase() + value.substring(1);
+}
+
+class _DepositSummaryCard extends StatelessWidget {
+  const _DepositSummaryCard({
+    required this.report,
+    required this.onOpen,
+    this.memberView = false,
+  });
+
+  final _DashboardDepositReport report;
+  final VoidCallback onOpen;
+  final bool memberView;
+
+  @override
+  Widget build(BuildContext context) {
+    if (report.result.error != null) {
+      return _SourceErrorCard(
+        source: report.title,
+        message: report.result.error!,
+      );
+    }
+    final accounts = report.result.records;
+    final maturity = accounts.fold<double>(
+      0,
+      (total, account) => total + _number(account['maturityAmount']),
+    );
+    final paid = accounts.fold<int>(
+      0,
+      (total, account) =>
+          total +
+          (account['payments'] is List
+              ? (account['payments'] as List)
+                  .where((payment) => payment == true || payment == 1)
+                  .length
+              : 0),
+    );
+    final scheduled = accounts.fold<int>(
+      0,
+      (total, account) =>
+          total +
+          (account['payments'] is List
+              ? (account['payments'] as List).length
+              : 0),
+    );
+    final accountSummary = accounts.isEmpty
+        ? 'No accounts yet'
+        : '${accounts.length} accounts · '
+            '${memberView ? 'My' : 'Total'} estimated maturity '
+            '${_currency(maturity)}'
+            '${scheduled == 0 ? '' : ' · $paid/$scheduled installments paid'}';
+    const color = Color(0xFF078A6A);
+    return Card(
+      key: Key(
+        'dashboard-deposit-${report.product.toLowerCase()}-${report.cadence}',
+      ),
+      margin: const EdgeInsets.only(bottom: 8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .11),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.savings_rounded, color: color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      report.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      accountSummary,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _RoleAccessData {
@@ -1139,6 +1345,8 @@ class _RegisteredAccountsPanel extends StatelessWidget {
       'shared_data_read': 'View shared data',
       'own_collection_read': 'View own collections',
       'collection_manage': 'Manage collections',
+      'deposit_view': 'View deposit accounts',
+      'deposit_manage': 'Manage deposit accounts',
       'ledger_manage': 'Manage ledger',
       'user_manage': 'Manage users',
     };

@@ -1093,6 +1093,12 @@ class _UserEditorState extends State<_UserEditor> {
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'These cadence switches also control matching FD, RD, and DRD reports.',
+                  ),
+                ),
                 SwitchListTile(
                   key: const Key('member-daily-access'),
                   contentPadding: EdgeInsets.zero,

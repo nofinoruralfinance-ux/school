@@ -265,9 +265,9 @@ class _CollectionPageState extends State<CollectionPage> {
                               ),
                               trailing: Text(
                                 '₹${member['totalReceived'] ?? 0}',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.green.shade400,
+                                  color: portalToastSuccessColor,
                                 ),
                               ),
                               children: [

@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
+import 'package:intl/intl.dart';
 import 'package:ntccsl/main.dart';
+import 'package:ntccsl/pages/deposit_account_page.dart';
 import 'package:ntccsl/pages/login_page.dart';
 import 'package:ntccsl/pages/profile_page.dart';
 import 'package:ntccsl/pages/register_page.dart';
@@ -622,6 +624,8 @@ void main() {
           'shared_data_read': false,
           'own_collection_read': true,
           'collection_manage': false,
+          'deposit_view': false,
+          'deposit_manage': false,
           'ledger_manage': false,
           'user_manage': false,
         },
@@ -915,7 +919,7 @@ void main() {
             find.byKey(const Key('profile-account-number')),
           )
           .data!),
-      matches(RegExp(r'^\d+$')),
+      matches(RegExp(r'^ADM\d{9}$')),
     );
     await tester.pageBack();
     await tester.pumpAndSettle();
@@ -959,25 +963,124 @@ void main() {
       tester.getTopLeft(find.byKey(const Key('navigation-menu-users'))).dy,
       greaterThan(tester.getTopLeft(depositMenu).dy),
     );
-    await tester.tap(depositMenu);
-    await tester.pumpAndSettle();
-    final drdMenuItem = find.byKey(const Key('navigation-menu-drd'));
-    expect(
-      find.descendant(of: depositMenu, matching: drdMenuItem),
-      findsOneWidget,
+    await _expandDrawerTile(
+      tester,
+      depositMenu,
+      find.byKey(const Key('navigation-menu-product-fd')),
     );
-    expect(tester.widget<ListTile>(drdMenuItem).enabled, isFalse);
-    expect(find.byKey(const Key('navigation-menu-daily')), findsOneWidget);
+    expect(find.text('FD/RD/DRD'), findsNothing);
+
+    final fdProduct = find.byKey(const Key('navigation-menu-product-fd'));
+    final fdMonthly = find.byKey(const Key('navigation-menu-fd-monthly'));
+    final fdProductTile = tester.widget<ExpansionTile>(fdProduct);
+    final fdProductAvatar = fdProductTile.leading! as CircleAvatar;
+    final fdProductIcon = fdProductAvatar.child! as Icon;
+    expect(fdProductIcon.icon, Icons.savings_outlined);
+    expect(fdProductIcon.color, const Color(0xFF3458D4));
+    expect(
+      fdProductAvatar.backgroundColor,
+      const Color(0xFF3458D4).withValues(alpha: .12),
+    );
+    await _expandDrawerTile(tester, fdProduct, fdMonthly);
+    expect(fdMonthly, findsOneWidget);
+    final fdCadenceTile = tester.widget<ListTile>(fdMonthly);
+    final fdCadenceAvatar = fdCadenceTile.leading! as CircleAvatar;
+    final fdCadenceIcon = fdCadenceAvatar.child! as Icon;
+    expect(fdCadenceIcon.icon, Icons.calendar_month_rounded);
+    expect(fdCadenceIcon.color, const Color(0xFF3458D4));
+    final rdProduct = find.byKey(const Key('navigation-menu-product-rd'));
+    await _expandDrawerTile(tester, depositMenu, rdProduct);
+    final rdProductTile = tester.widget<ExpansionTile>(rdProduct);
+    final rdProductAvatar = rdProductTile.leading! as CircleAvatar;
+    final rdProductIcon = rdProductAvatar.child! as Icon;
+    expect(rdProductIcon.icon, Icons.event_repeat_rounded);
+    expect(rdProductIcon.color, const Color(0xFF8E24AA));
+    expect(
+      rdProductAvatar.backgroundColor,
+      const Color(0xFF8E24AA).withValues(alpha: .12),
+    );
+    final rdWeekly = find.byKey(const Key('navigation-menu-rd-weekly'));
+    final rdMonthly = find.byKey(const Key('navigation-menu-rd-monthly'));
+    await _expandDrawerTile(tester, rdProduct, rdWeekly);
+    expect(rdWeekly, findsOneWidget);
+    expect(rdMonthly, findsOneWidget);
+    for (final cadence in ['weekly', 'monthly']) {
+      final tile = tester.widget<ListTile>(
+        find.byKey(Key('navigation-menu-rd-$cadence')),
+      );
+      final avatar = tile.leading! as CircleAvatar;
+      final icon = avatar.child! as Icon;
+      expect(
+        icon.icon,
+        cadence == 'weekly'
+            ? Icons.calendar_view_week_rounded
+            : Icons.calendar_month_rounded,
+      );
+      expect(icon.color, const Color(0xFF8E24AA));
+    }
+    final drdProduct = find.byKey(const Key('navigation-menu-product-drd'));
+    await _expandDrawerTile(
+      tester,
+      depositMenu,
+      drdProduct,
+    );
+    final drdProductTile = tester.widget<ExpansionTile>(drdProduct);
+    final drdProductAvatar = drdProductTile.leading! as CircleAvatar;
+    final drdProductIcon = drdProductAvatar.child! as Icon;
+    expect(drdProductIcon.icon, Icons.calendar_month_rounded);
+    expect(drdProductIcon.color, const Color(0xFF078A6A));
+    expect(
+      drdProductAvatar.backgroundColor,
+      const Color(0xFF078A6A).withValues(alpha: .12),
+    );
+    await _ensureDrawerItemVisible(tester, drdProduct);
+    await _expandDrawerTile(
+      tester,
+      drdProduct,
+      find.byKey(const Key('navigation-menu-drd-daily')),
+    );
+    for (final cadence in ['daily', 'weekly', 'monthly']) {
+      expect(
+        find.byKey(Key('navigation-menu-drd-$cadence')),
+        findsOneWidget,
+      );
+      final tile = tester.widget<ListTile>(
+        find.byKey(Key('navigation-menu-drd-$cadence')),
+      );
+      final avatar = tile.leading! as CircleAvatar;
+      final icon = avatar.child! as Icon;
+      expect(
+        icon.icon,
+        switch (cadence) {
+          'daily' => Icons.today_rounded,
+          'weekly' => Icons.calendar_view_week_rounded,
+          _ => Icons.calendar_month_rounded,
+        },
+      );
+      expect(icon.color, const Color(0xFF078A6A));
+    }
     expect(find.text('Test Admin'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('close-navigation-menu')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('navigation-menu-daily')), findsNothing);
+    expect(find.byKey(const Key('navigation-menu-drd-daily')), findsNothing);
 
     await tester.tap(find.byKey(const Key('open-navigation-menu')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('navigation-menu-deposit')));
-    await tester.pumpAndSettle();
+    final collectionsMenu =
+        find.byKey(const Key('navigation-menu-existing-collections'));
+    expect(
+      find.ancestor(
+        of: collectionsMenu,
+        matching: find.byKey(const Key('navigation-menu-deposit')),
+      ),
+      findsNothing,
+    );
+    await _expandDrawerTile(
+      tester,
+      collectionsMenu,
+      find.byKey(const Key('navigation-menu-daily')),
+    );
     await _ensureDrawerItemVisible(
       tester,
       find.byKey(const Key('navigation-menu-daily')),
@@ -994,6 +1097,380 @@ void main() {
     await tester.pumpAndSettle();
     expect(didLogout, isTrue);
     expect(find.text('Signed out successfully.'), findsOneWidget);
+  });
+
+  test('deposit maturity calculations follow the confirmed terms', () {
+    final startDate = DateTime(2026, 1, 31);
+    final maturityDate = depositMaturityDate(startDate, 12);
+    expect(maturityDate, DateTime(2027, 1, 31));
+    expect(
+      depositMaturityDate(startDate, 1),
+      DateTime(2026, 2, 28),
+    );
+    expect(
+      depositMaturityAmount(
+        product: 'FD',
+        cadence: 'monthly',
+        amount: 10000,
+        annualRate: 12,
+        tenureMonths: 12,
+        periodCount: 0,
+      ),
+      11268.25,
+    );
+    expect(
+      depositMaturityAmount(
+        product: 'RD',
+        cadence: 'monthly',
+        amount: 1000,
+        annualRate: 12,
+        tenureMonths: 12,
+        periodCount: 12,
+      ),
+      12682.50,
+    );
+    expect(
+      depositPeriodDates(
+        startDate: DateTime(2026, 1, 31),
+        maturityDate: DateTime(2026, 4, 30),
+        cadence: 'monthly',
+      ),
+      [DateTime(2026, 2, 28), DateTime(2026, 3, 31), DateTime(2026, 4, 30)],
+    );
+  });
+
+  testWidgets('deposit menu respects member cadence access',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainHomeScreen(
+          apiService: _FakeApiService(),
+          session: const AuthSession(
+            token: 'member-token',
+            userId: 'member-1',
+            name: 'Jordan Member',
+            email: 'jordan@example.com',
+            role: 'Member',
+            permissions: {
+              'own_collection_read': true,
+              'deposit_view': true,
+            },
+            reportAccess: {
+              'daily': true,
+              'weekly': false,
+              'monthly': false,
+            },
+          ),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('open-navigation-menu')));
+    await tester.pumpAndSettle();
+    final deposit = find.byKey(const Key('navigation-menu-deposit'));
+    await tester.tap(deposit);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('navigation-menu-product-fd')), findsNothing);
+    expect(find.byKey(const Key('navigation-menu-product-rd')), findsNothing);
+    final drd = find.byKey(const Key('navigation-menu-product-drd'));
+    await _expandDrawerTile(tester, deposit, drd);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('navigation-menu-drd-daily')), findsOneWidget);
+    expect(find.byKey(const Key('navigation-menu-drd-weekly')), findsNothing);
+    expect(find.byKey(const Key('navigation-menu-drd-monthly')), findsNothing);
+  });
+
+  testWidgets('deposit pages use dedicated view and manage permissions',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainHomeScreen(
+          apiService: _FakeApiService(),
+          session: const AuthSession(
+            token: 'member-token',
+            userId: 'member-1',
+            name: 'Jordan Member',
+            email: 'jordan@example.com',
+            role: 'Member',
+            permissions: {'own_collection_read': true},
+            reportAccess: {'daily': true, 'weekly': true, 'monthly': true},
+          ),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('open-navigation-menu')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('navigation-menu-deposit')), findsNothing);
+    final collections =
+        find.byKey(const Key('navigation-menu-existing-collections'));
+    await _expandDrawerTile(
+      tester,
+      collections,
+      find.byKey(const Key('navigation-menu-daily')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('navigation-menu-daily')), findsOneWidget);
+    expect(find.byKey(const Key('navigation-menu-weekly')), findsOneWidget);
+    expect(find.byKey(const Key('navigation-menu-monthly')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('close-navigation-menu')));
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainHomeScreen(
+          apiService: _FakeApiService(),
+          session: const AuthSession(
+            token: 'collector-token',
+            userId: 'collector-1',
+            name: 'Collector',
+            email: 'collector@example.com',
+            role: 'Collector',
+            permissions: {'deposit_view': true},
+          ),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openDrawerPage(tester, 'navigation-menu-drd-daily');
+    expect(find.byKey(const Key('add-deposit-account')), findsNothing);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainHomeScreen(
+          apiService: _FakeApiService(),
+          session: const AuthSession(
+            token: 'collector-token',
+            userId: 'collector-1',
+            name: 'Collector',
+            email: 'collector@example.com',
+            role: 'Collector',
+            permissions: {'deposit_manage': true},
+          ),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openDrawerPage(tester, 'navigation-menu-drd-daily');
+    expect(find.byKey(const Key('add-deposit-account')), findsOneWidget);
+  });
+
+  testWidgets('deposit page supports retry and refresh from empty state',
+      (WidgetTester tester) async {
+    final apiService = _FakeApiService()
+      ..depositFetchError = StateError('offline');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainHomeScreen(
+          apiService: apiService,
+          session: const AuthSession(
+            token: 'test-token',
+            userId: 'admin-1',
+            name: 'Test Admin',
+            email: 'admin@example.com',
+            role: 'Admin',
+          ),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openDrawerPage(tester, 'navigation-menu-fd-monthly');
+
+    expect(find.text('Could not load this page'), findsOneWidget);
+    expect(find.text('Bad state: offline'), findsOneWidget);
+
+    apiService.depositFetchError = null;
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(find.text('No Fixed Deposit accounts yet'), findsOneWidget);
+    expect(find.byType(RefreshIndicator), findsOneWidget);
+
+    final initialFetchCount = apiService.depositFetchCount;
+    final refresh = tester
+        .state<RefreshIndicatorState>(find.byType(RefreshIndicator))
+        .show();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await refresh;
+    expect(apiService.depositFetchCount, initialFetchCount + 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('RD monthly accounts can be created and payments tracked',
+      (WidgetTester tester) async {
+    final apiService = _FakeApiService();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainHomeScreen(
+          apiService: apiService,
+          session: const AuthSession(
+            token: 'test-token',
+            userId: 'admin-1',
+            name: 'Test Admin',
+            email: 'admin@example.com',
+            role: 'Admin',
+          ),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _openDrawerPage(tester, 'navigation-menu-rd-monthly');
+    expect(find.text('Recurring Deposit — Monthly'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('add-deposit-account')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('deposit-member-name')),
+      'Jordan Member',
+    );
+    await tester.enterText(find.byKey(const Key('deposit-amount')), '1000');
+    await tester.enterText(
+      find.byKey(const Key('deposit-annual-rate')),
+      '12',
+    );
+    await tester.enterText(
+      find.byKey(const Key('deposit-tenure-months')),
+      '12',
+    );
+    expect(find.byKey(const Key('deposit-maturity-estimate')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('save-deposit-account')));
+    await tester.pumpAndSettle();
+
+    expect(apiService.depositAccounts, hasLength(1));
+    expect(apiService.depositAccounts.single['product'], 'RD');
+    expect(apiService.depositAccounts.single['cadence'], 'monthly');
+    expect(apiService.depositAccounts.single['maturityAmount'], 12682.5);
+    expect(apiService.depositAccounts.single['payments'], hasLength(12));
+
+    final editButton = find.byKey(const Key('edit-deposit-deposit-1'));
+    final deleteButton = find.byKey(const Key('delete-deposit-deposit-1'));
+    expect(
+      tester.widget<IconButton>(editButton).style!.foregroundColor!.resolve({}),
+      portalEditColor,
+    );
+    expect(
+      tester
+          .widget<IconButton>(deleteButton)
+          .style!
+          .foregroundColor!
+          .resolve({}),
+      portalDeleteColor,
+    );
+
+    final scheduleButton = find.byKey(const Key('deposit-schedule-deposit-1'));
+    await tester.ensureVisible(scheduleButton);
+    await tester.pumpAndSettle();
+    await tester.tap(scheduleButton);
+    await tester.pumpAndSettle();
+    final firstPayment = find.byKey(const Key('deposit-payment-deposit-1-0'));
+    await tester.tap(firstPayment);
+    await tester.pumpAndSettle();
+    expect(apiService.depositAccounts.single['payments'][0], isTrue);
+    expect(
+      apiService.depositActions.last['action'],
+      'toggleDepositPayment',
+    );
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(editButton);
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Edit Recurring Deposit account'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('deposit-member-name')))
+          .controller!
+          .text,
+      'Jordan Member',
+    );
+    await tester.enterText(find.byKey(const Key('deposit-amount')), '1500');
+    await tester.ensureVisible(find.byKey(const Key('save-deposit-account')));
+    final editCompleter = Completer<bool>();
+    apiService.depositMutationCompleter = editCompleter;
+    await tester.tap(find.byKey(const Key('save-deposit-account')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Updating deposit account'), findsOneWidget);
+    expect(find.byKey(const Key('portal-loading-state')), findsOneWidget);
+    editCompleter.complete(true);
+    await tester.pumpAndSettle();
+    expect(apiService.depositActions.last['action'], 'editDepositAccount');
+    expect(apiService.depositActions.last['id'], 'deposit-1');
+    expect(apiService.depositAccounts.single['amount'], 1500);
+    expect(apiService.depositAccounts.single['payments'][0], isTrue);
+
+    await tester.tap(find.byKey(const Key('delete-deposit-deposit-1')));
+    await tester.pumpAndSettle();
+    final deleteConfirmation = tester
+        .widget<FilledButton>(find.byKey(const Key('confirm-delete-deposit')));
+    expect(
+      deleteConfirmation.style!.backgroundColor!.resolve({}),
+      portalDeleteColor,
+    );
+    final deleteCompleter = Completer<bool>();
+    apiService.depositMutationCompleter = deleteCompleter;
+    await tester.tap(find.byKey(const Key('confirm-delete-deposit')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Deleting deposit account'), findsOneWidget);
+    expect(find.byKey(const Key('portal-loading-state')), findsOneWidget);
+    deleteCompleter.complete(true);
+    await tester.pumpAndSettle();
+    expect(apiService.depositAccounts, isEmpty);
+  });
+
+  testWidgets('FD monthly accounts use a one-time principal and no schedule',
+      (WidgetTester tester) async {
+    final apiService = _FakeApiService();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainHomeScreen(
+          apiService: apiService,
+          session: const AuthSession(
+            token: 'test-token',
+            userId: 'admin-1',
+            name: 'Test Admin',
+            email: 'admin@example.com',
+            role: 'Admin',
+          ),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _openDrawerPage(tester, 'navigation-menu-fd-monthly');
+    expect(find.text('Fixed Deposit — Monthly'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('add-deposit-account')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('deposit-member-name')),
+      'Jordan Member',
+    );
+    await tester.enterText(find.byKey(const Key('deposit-amount')), '10000');
+    await tester.enterText(
+      find.byKey(const Key('deposit-annual-rate')),
+      '12',
+    );
+    await tester.enterText(
+      find.byKey(const Key('deposit-tenure-months')),
+      '12',
+    );
+    await tester.tap(find.byKey(const Key('save-deposit-account')));
+    await tester.pumpAndSettle();
+
+    expect(apiService.depositAccounts.single['product'], 'FD');
+    expect(apiService.depositAccounts.single['amount'], 10000);
+    expect(apiService.depositAccounts.single['maturityAmount'], 11268.25);
+    expect(apiService.depositAccounts.single['payments'], isEmpty);
   });
 
   testWidgets('appearance menu switches between system, light, and dark',
@@ -1132,6 +1609,24 @@ void main() {
   testWidgets('dashboard summarizes account and collection data',
       (WidgetTester tester) async {
     final apiService = _FakeApiService();
+    apiService.depositAccounts.addAll([
+      {
+        'id': 'dashboard-fd-1',
+        'product': 'FD',
+        'cadence': 'monthly',
+        'memberName': 'Jordan Member',
+        'maturityAmount': 11268.25,
+        'payments': <bool>[],
+      },
+      {
+        'id': 'dashboard-rd-1',
+        'product': 'RD',
+        'cadence': 'monthly',
+        'memberName': 'Jordan Member',
+        'maturityAmount': 12682.50,
+        'payments': <bool>[true, false],
+      },
+    ]);
     await tester.pumpWidget(
       MaterialApp(
         home: MainHomeScreen(
@@ -1154,26 +1649,43 @@ void main() {
     expect(find.text('Collections received'), findsOneWidget);
     expect(find.text('Members'), findsOneWidget);
     expect(find.text('User accounts'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('dashboard-collection-daily')),
-      300,
-      scrollable: find.byType(Scrollable).first,
+    final fdSummary = find.byKey(const Key('dashboard-deposit-fd-monthly'));
+    final dashboardList = find.byType(ListView).first;
+    await _scrollUntilBuilt(tester, fdSummary, dashboardList);
+    await tester.ensureVisible(fdSummary);
+    expect(
+        find.byKey(const Key('dashboard-deposit-fd-monthly')), findsOneWidget);
+    expect(
+      find.textContaining('Total estimated maturity ₹11,268'),
+      findsOneWidget,
     );
+    await tester.drag(dashboardList, const Offset(0, 500));
+    await tester.pumpAndSettle();
+    final dailySummary = find.byKey(const Key('dashboard-collection-daily'));
+    await _scrollUntilBuilt(
+      tester,
+      dailySummary,
+      dashboardList,
+    );
+    await tester.ensureVisible(dailySummary);
     await tester.pumpAndSettle();
     expect(find.text('Daily collection'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Office'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
+    final ledgerEntry = find.text('Office');
+    await _scrollUntilBuilt(tester, ledgerEntry, dashboardList);
+    await tester.ensureVisible(ledgerEntry);
     await tester.pumpAndSettle();
     expect(find.text('Office'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('open-navigation-menu')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('navigation-menu-deposit')));
-    await tester.pumpAndSettle();
+    final existingCollections =
+        find.byKey(const Key('navigation-menu-existing-collections'));
     final dailyMenuItem = find.byKey(const Key('navigation-menu-daily'));
+    await _expandDrawerTile(
+      tester,
+      existingCollections,
+      dailyMenuItem,
+    );
     await _ensureDrawerItemVisible(tester, dailyMenuItem);
     await tester.tap(dailyMenuItem);
     await tester.pumpAndSettle();
@@ -1186,6 +1698,12 @@ void main() {
           'getWeekly',
           'getMonthly',
           'getUsers',
+          'getDepositAccounts:FD:monthly',
+          'getDepositAccounts:RD:weekly',
+          'getDepositAccounts:RD:monthly',
+          'getDepositAccounts:DRD:daily',
+          'getDepositAccounts:DRD:weekly',
+          'getDepositAccounts:DRD:monthly',
         ]));
   });
 
@@ -1459,8 +1977,12 @@ void main() {
       'email': 'casey@example.com',
       'role': 'Member',
     });
-    await tester.drag(find.byType(ListView).first, const Offset(0, 450));
+    final refresh = tester
+        .state<RefreshIndicatorState>(find.byType(RefreshIndicator).first)
+        .show();
+    await tester.pump();
     await tester.pumpAndSettle();
+    await refresh;
     for (var attempt = 0;
         roleChart.evaluate().isEmpty && attempt < 8;
         attempt++) {
@@ -1585,6 +2107,8 @@ void main() {
         'shared_data_read': true,
         'own_collection_read': true,
         'collection_manage': false,
+        'deposit_view': true,
+        'deposit_manage': false,
         'ledger_manage': false,
         'user_manage': false,
       },
@@ -1671,6 +2195,8 @@ void main() {
         'shared_data_read': false,
         'own_collection_read': true,
         'collection_manage': false,
+        'deposit_view': false,
+        'deposit_manage': false,
         'ledger_manage': false,
         'user_manage': false,
       },
@@ -1750,6 +2276,24 @@ void main() {
         'rowIndex': 3,
       });
     }
+    apiService.depositAccounts.addAll([
+      {
+        'id': 'member-deposit-own',
+        'product': 'RD',
+        'cadence': 'monthly',
+        'memberName': '  jordan   member ',
+        'maturityAmount': 420,
+        'payments': <bool>[true, false],
+      },
+      {
+        'id': 'member-deposit-other',
+        'product': 'RD',
+        'cadence': 'monthly',
+        'memberName': 'Other Member',
+        'maturityAmount': 999,
+        'payments': <bool>[true],
+      },
+    ]);
     const session = AuthSession(
       token: 'member-token',
       userId: 'member-1',
@@ -1760,6 +2304,8 @@ void main() {
         'shared_data_read': true,
         'own_collection_read': true,
         'collection_manage': true,
+        'deposit_view': true,
+        'deposit_manage': true,
         'ledger_manage': true,
         'user_manage': true,
       },
@@ -1777,11 +2323,15 @@ void main() {
 
     expect(find.text('My dashboard'), findsOneWidget);
     expect(find.text('My total contributions'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('member-report-detail-daily-2-2026-02-01')),
-      300,
-      scrollable: find.byType(Scrollable).first,
+    final dashboardList = find.byType(ListView).first;
+    final dailyDetails =
+        find.byKey(const Key('member-report-detail-daily-2-2026-02-01'));
+    await _scrollUntilBuilt(
+      tester,
+      dailyDetails,
+      dashboardList,
     );
+    await tester.ensureVisible(dailyDetails);
     await tester.pumpAndSettle();
     expect(
       find.byKey(
@@ -1789,30 +2339,39 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.scrollUntilVisible(
-      find.byKey(
-        const Key('member-report-detail-weekly-2-2026-02-01'),
-      ),
-      300,
-      scrollable: find.byType(Scrollable).first,
+    final weeklyDetails =
+        find.byKey(const Key('member-report-detail-weekly-2-2026-02-01'));
+    await _scrollUntilBuilt(
+      tester,
+      weeklyDetails,
+      dashboardList,
     );
+    await tester.ensureVisible(weeklyDetails);
     expect(
       find.byKey(
         const Key('member-report-detail-weekly-2-2026-02-01'),
       ),
       findsOneWidget,
     );
-    await tester.scrollUntilVisible(
-      find.byKey(
-        const Key('member-report-detail-monthly-2-2026-02-01'),
-      ),
-      300,
-      scrollable: find.byType(Scrollable).first,
+    final monthlyDetails =
+        find.byKey(const Key('member-report-detail-monthly-2-2026-02-01'));
+    await _scrollUntilBuilt(
+      tester,
+      monthlyDetails,
+      dashboardList,
     );
+    await tester.ensureVisible(monthlyDetails);
     expect(
       find.byKey(
         const Key('member-report-detail-monthly-2-2026-02-01'),
       ),
+      findsOneWidget,
+    );
+    final rdSummary = find.byKey(const Key('dashboard-deposit-rd-monthly'));
+    await _scrollUntilBuilt(tester, rdSummary, dashboardList);
+    await tester.ensureVisible(rdSummary);
+    expect(
+      find.textContaining('My estimated maturity ₹420'),
       findsOneWidget,
     );
     expect(find.text('Other Member'), findsNothing);
@@ -2519,13 +3078,33 @@ void main() {
         tester.widget<SwitchListTile>(memberOwnReadPermission);
     expect(memberOwnReadSwitch.value, isTrue);
     expect(memberOwnReadSwitch.onChanged, isNotNull);
-    final savePermissionsButton =
-        find.byKey(const Key('save-role-permissions'));
+    final memberDepositViewPermission = find.byKey(
+      const Key('permission-member-deposit_view'),
+    );
     await tester.scrollUntilVisible(
-      savePermissionsButton,
+      memberDepositViewPermission,
       300,
       scrollable: find.byType(Scrollable).last,
     );
+    await Scrollable.ensureVisible(
+      tester.element(memberDepositViewPermission),
+      alignment: 0.4,
+    );
+    await tester.pumpAndSettle();
+    final memberDepositViewSwitch =
+        tester.widget<SwitchListTile>(memberDepositViewPermission);
+    expect(memberDepositViewSwitch.value, isTrue);
+    expect(memberDepositViewSwitch.onChanged, isNotNull);
+    await tester.tap(
+      find.descendant(
+        of: memberDepositViewPermission,
+        matching: find.byType(Switch),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final savePermissionsButton =
+        find.byKey(const Key('save-role-permissions'));
+    await tester.ensureVisible(savePermissionsButton);
     await tester.tap(savePermissionsButton);
     await tester.pumpAndSettle();
 
@@ -2536,6 +3115,8 @@ void main() {
       'shared_data_read': true,
       'own_collection_read': true,
       'collection_manage': false,
+      'deposit_view': false,
+      'deposit_manage': false,
       'ledger_manage': false,
       'user_manage': false,
     });
@@ -2853,6 +3434,8 @@ void main() {
               'shared_data_read': role == 'Collector',
               'own_collection_read': true,
               'collection_manage': false,
+              'deposit_view': role == 'Collector',
+              'deposit_manage': false,
               'ledger_manage': false,
               'user_manage': false,
             },
@@ -2999,6 +3582,42 @@ void main() {
       'date': '2026-01-02',
       'depAmt': 25,
       'token': 'session-token',
+    });
+  });
+
+  test('deposit account reads include product, cadence, and session token',
+      () async {
+    final client = _RecordingHttpClient([
+      [
+        {
+          'id': 'deposit-1',
+          'product': 'RD',
+          'cadence': 'monthly',
+          'payments': [false],
+        },
+      ],
+    ]);
+    final apiService = ApiService(client: client);
+    const session = AuthSession(
+      token: 'session-token',
+      userId: 'admin-1',
+      name: 'Admin',
+      email: 'admin@example.com',
+      role: 'Admin',
+    );
+
+    final accounts = await apiService.fetchDepositAccounts(
+      product: 'RD',
+      cadence: 'monthly',
+      session: session,
+    );
+
+    expect(accounts.single['id'], 'deposit-1');
+    expect(client.payloads.single, {
+      'action': 'getDepositAccounts',
+      'token': 'session-token',
+      'product': 'RD',
+      'cadence': 'monthly',
     });
   });
 
@@ -3192,15 +3811,39 @@ Future<void> _signIn(WidgetTester tester) async {
 Future<void> _openDrawerPage(WidgetTester tester, String itemKey) async {
   await tester.tap(find.byKey(const Key('open-navigation-menu')));
   await tester.pumpAndSettle();
+  final item = find.byKey(Key(itemKey));
   if (itemKey == 'navigation-menu-daily' ||
       itemKey == 'navigation-menu-weekly' ||
       itemKey == 'navigation-menu-monthly') {
-    await tester.tap(find.byKey(const Key('navigation-menu-deposit')));
-    await tester.pumpAndSettle();
+    final collections =
+        find.byKey(const Key('navigation-menu-existing-collections'));
+    await _expandDrawerTile(tester, collections, item);
   }
-  final item = find.byKey(Key(itemKey));
+  if (itemKey.startsWith('navigation-menu-fd-') ||
+      itemKey.startsWith('navigation-menu-rd-') ||
+      itemKey.startsWith('navigation-menu-drd-')) {
+    final deposit = find.byKey(const Key('navigation-menu-deposit'));
+    final product = find.byKey(
+      Key(
+        'navigation-menu-product-${itemKey.split('-')[2]}',
+      ),
+    );
+    await _expandDrawerTile(tester, deposit, product);
+    await _expandDrawerTile(tester, product, item);
+  }
   await _ensureDrawerItemVisible(tester, item);
   await tester.tap(item);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _expandDrawerTile(
+  WidgetTester tester,
+  Finder tile,
+  Finder child,
+) async {
+  if (child.evaluate().isNotEmpty) return;
+  await _ensureDrawerItemVisible(tester, tile);
+  await tester.tap(tile);
   await tester.pumpAndSettle();
 }
 
@@ -3225,17 +3868,30 @@ Future<void> _ensureDrawerItemVisible(
   final itemRect = tester.getRect(item);
   if (itemRect.bottom > listRect.bottom) {
     await tester.drag(
-      drawerList,
+      drawerScrollable,
       Offset(0, listRect.bottom - itemRect.bottom - 8),
     );
     await tester.pumpAndSettle();
   } else if (itemRect.top < listRect.top) {
     await tester.drag(
-      drawerList,
+      drawerScrollable,
       Offset(0, listRect.top - itemRect.top + 8),
     );
     await tester.pumpAndSettle();
   }
+}
+
+Future<void> _scrollUntilBuilt(
+  WidgetTester tester,
+  Finder target,
+  Finder scrollable,
+) async {
+  for (var attempt = 0; target.evaluate().isEmpty && attempt < 12; attempt++) {
+    await tester.drag(scrollable, const Offset(0, -360));
+    await tester.pumpAndSettle();
+  }
+  // ignore: avoid_print
+  expect(target, findsOneWidget);
 }
 
 double _contrastRatio(Color first, Color second) {
@@ -3267,6 +3923,7 @@ class _FakeApiService extends ApiService {
   final List<Map<String, dynamic>> users = [
     {
       'id': 'user-1',
+      'accountNo': 'DRD000000001',
       'name': 'Morgan Member',
       'email': 'morgan@example.com',
       'role': 'Member',
@@ -3282,6 +3939,12 @@ class _FakeApiService extends ApiService {
   ];
   final List<Map<String, dynamic>> collectionRequests = [];
   final List<Map<String, dynamic>> collectionActions = [];
+  final List<Map<String, dynamic>> depositRequests = [];
+  final List<Map<String, dynamic>> depositActions = [];
+  final List<Map<String, dynamic>> depositAccounts = [];
+  Completer<bool>? depositMutationCompleter;
+  Object? depositFetchError;
+  int depositFetchCount = 0;
   final List<Map<String, dynamic>> userRequests = [];
   final List<Map<String, dynamic>> passwordChanges = [];
   final List<Map<String, dynamic>> profileUpdates = [];
@@ -3355,6 +4018,8 @@ class _FakeApiService extends ApiService {
             'shared_data_read': role == 'Collector',
             'own_collection_read': true,
             'collection_manage': role == 'Collector',
+            'deposit_view': true,
+            'deposit_manage': role == 'Collector',
             'ledger_manage': role == 'Collector',
             'user_manage': role == 'Collector',
           },
@@ -3390,10 +4055,38 @@ class _FakeApiService extends ApiService {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchDepositAccounts({
+    required String product,
+    required String cadence,
+    required AuthSession session,
+  }) async {
+    depositFetchCount++;
+    if (depositFetchError != null) throw depositFetchError!;
+    fetchActions.add('getDepositAccounts:$product:$cadence');
+    return depositAccounts
+        .where(
+          (account) =>
+              account['product'] == product &&
+              account['cadence'] == cadence &&
+              (session.role.toLowerCase() != 'member' ||
+                  session.matchesMemberName(account['memberName'])),
+        )
+        .toList();
+  }
+
+  @override
   Future<bool> sendPostRequest(
     Map<String, dynamic> body,
     AuthSession session,
   ) async {
+    if (body['action'] == 'editDepositAccount' ||
+        body['action'] == 'deleteDepositAccount') {
+      final completer = depositMutationCompleter;
+      if (completer != null) {
+        depositMutationCompleter = null;
+        await completer.future;
+      }
+    }
     switch (body['action']) {
       case 'changePassword':
         passwordChanges.add({...body, 'token': session.token});
@@ -3463,6 +4156,88 @@ class _FakeApiService extends ApiService {
           (item) => item['rowIndex'] == body['rowIndex'],
         );
         collectionActions.add(Map<String, dynamic>.from(body));
+        return true;
+      case 'addDepositAccount':
+        depositRequests.add(Map<String, dynamic>.from(body));
+        depositAccounts.add({
+          ...body,
+          'id': 'deposit-${depositAccounts.length + 1}',
+          'maturityDate': DateFormat('yyyy-MM-dd').format(
+            depositMaturityDate(
+              DateFormat('yyyy-MM-dd').parse(body['startDate'] as String),
+              body['tenureMonths'] as int,
+            ),
+          ),
+          'maturityAmount': depositMaturityAmount(
+            product: body['product'] as String,
+            cadence: body['cadence'] as String,
+            amount: (body['amount'] as num).toDouble(),
+            annualRate: (body['annualRate'] as num).toDouble(),
+            tenureMonths: body['tenureMonths'] as int,
+            periodCount: (body['payments'] as List).length,
+          ),
+          'periodDates': body['product'] == 'FD'
+              ? <String>[]
+              : depositPeriodDates(
+                  startDate: DateFormat('yyyy-MM-dd')
+                      .parse(body['startDate'] as String),
+                  maturityDate: depositMaturityDate(
+                    DateFormat('yyyy-MM-dd').parse(body['startDate'] as String),
+                    body['tenureMonths'] as int,
+                  ),
+                  cadence: body['cadence'] as String,
+                ).map((date) => DateFormat('yyyy-MM-dd').format(date)).toList(),
+        });
+        depositActions.add(Map<String, dynamic>.from(body));
+        return true;
+      case 'editDepositAccount':
+        depositActions.add(Map<String, dynamic>.from(body));
+        final account =
+            depositAccounts.firstWhere((item) => item['id'] == body['id']);
+        account
+          ..['memberName'] = body['memberName']
+          ..['startDate'] = body['startDate']
+          ..['amount'] = body['amount']
+          ..['annualRate'] = body['annualRate']
+          ..['tenureMonths'] = body['tenureMonths'];
+        final startDate =
+            DateFormat('yyyy-MM-dd').parse(body['startDate'] as String);
+        final maturityDate = depositMaturityDate(
+          startDate,
+          body['tenureMonths'] as int,
+        );
+        final periodDates = body['product'] == 'FD'
+            ? <DateTime>[]
+            : depositPeriodDates(
+                startDate: startDate,
+                maturityDate: maturityDate,
+                cadence: body['cadence'] as String,
+              );
+        account
+          ..['maturityDate'] = DateFormat('yyyy-MM-dd').format(maturityDate)
+          ..['periodDates'] = periodDates
+              .map((date) => DateFormat('yyyy-MM-dd').format(date))
+              .toList()
+          ..['maturityAmount'] = depositMaturityAmount(
+            product: body['product'] as String,
+            cadence: body['cadence'] as String,
+            amount: (body['amount'] as num).toDouble(),
+            annualRate: (body['annualRate'] as num).toDouble(),
+            tenureMonths: body['tenureMonths'] as int,
+            periodCount: periodDates.length,
+          );
+        return true;
+      case 'toggleDepositPayment':
+        depositActions.add(Map<String, dynamic>.from(body));
+        final account =
+            depositAccounts.firstWhere((item) => item['id'] == body['id']);
+        final payments = account['payments'] as List<dynamic>;
+        final index = (body['periodIndex'] as int) - 1;
+        payments[index] = !(payments[index] == true);
+        return true;
+      case 'deleteDepositAccount':
+        depositActions.add(Map<String, dynamic>.from(body));
+        depositAccounts.removeWhere((item) => item['id'] == body['id']);
         return true;
       case 'addUser':
         userRequests.add(Map<String, dynamic>.from(body));

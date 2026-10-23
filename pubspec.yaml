@@ -1,7 +1,7 @@
 name: ntccsl
 description: NTCCSL Account Management Application linked with Google Sheets.
 publish_to: 'none'
-version: 1.2.2+2
+version: 1.2.3+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

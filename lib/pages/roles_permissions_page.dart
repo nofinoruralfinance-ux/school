@@ -32,7 +32,15 @@ class _RolesPermissionsPageState extends State<RolesPermissionsPage> {
     ),
     'collection_manage': (
       'Manage collections',
-      'Add, edit, and delete collection records and mark payments.',
+      'Add, edit, and delete collection records and mark collection payments.',
+    ),
+    'deposit_view': (
+      'View deposit accounts',
+      'Read FD, RD, and DRD accounts allowed by the account cadence.',
+    ),
+    'deposit_manage': (
+      'Manage deposit accounts',
+      'Create and edit deposit accounts, track payments, and delete records.',
     ),
     'ledger_manage': (
       'Manage ledger',
@@ -201,7 +209,8 @@ class _RolesPermissionsPageState extends State<RolesPermissionsPage> {
                             enabled: !_saving &&
                                 (role == 'Collector' ||
                                     entry.key == 'shared_data_read' ||
-                                    entry.key == 'own_collection_read'),
+                                    entry.key == 'own_collection_read' ||
+                                    entry.key == 'deposit_view'),
                             onChanged: (enabled) =>
                                 _setPermission(role, entry.key, enabled),
                             theme: theme,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'pages/collection_page.dart';
 import 'pages/dashboard_page.dart';
+import 'pages/deposit_account_page.dart';
 import 'pages/ledger_page.dart';
 import 'pages/login_page.dart';
 import 'pages/profile_page.dart';
@@ -12,6 +13,15 @@ import 'pages/splash_page.dart';
 import 'pages/users_page.dart';
 import 'services/api_service.dart';
 import 'widgets/portal_widgets.dart';
+
+const _depositRoutes = <String, int>{
+  'fd-monthly': 7,
+  'rd-weekly': 8,
+  'rd-monthly': 9,
+  'drd-daily': 10,
+  'drd-weekly': 11,
+  'drd-monthly': 12,
+};
 
 void main() => runApp(NtccslAccountApp(showSplashScreen: true));
 
@@ -251,6 +261,9 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   bool get _canViewUsers =>
       widget.session.hasPermission('shared_data_read') ||
       widget.session.hasPermission('user_manage');
+  bool get _canViewDepositAccounts =>
+      widget.session.hasPermission('deposit_view') ||
+      widget.session.hasPermission('deposit_manage');
 
   List<int> get _visiblePageIndices => [
         0,
@@ -258,11 +271,24 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         if (_canViewCollections && widget.session.canViewReport('daily')) 2,
         if (_canViewCollections && widget.session.canViewReport('weekly')) 3,
         if (_canViewCollections && widget.session.canViewReport('monthly')) 4,
+        if (_canViewDepositAccounts && widget.session.canViewReport('monthly'))
+          7,
+        if (_canViewDepositAccounts && widget.session.canViewReport('weekly'))
+          8,
+        if (_canViewDepositAccounts && widget.session.canViewReport('monthly'))
+          9,
+        if (_canViewDepositAccounts && widget.session.canViewReport('daily'))
+          10,
+        if (_canViewDepositAccounts && widget.session.canViewReport('weekly'))
+          11,
+        if (_canViewDepositAccounts && widget.session.canViewReport('monthly'))
+          12,
         if (_canViewUsers) 5,
         if (_isAdmin) 6,
       ];
-  List<int> get _bottomNavigationPageIndices =>
-      _visiblePageIndices.where((index) => index != 1 && index != 6).toList();
+  List<int> get _bottomNavigationPageIndices => _visiblePageIndices
+      .where((index) => index != 1 && index != 6 && index < 7)
+      .toList();
 
   static const _navigationLabels = [
     'Dashboard',
@@ -311,6 +337,84 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           Navigator.of(context).pop();
         },
       ),
+    );
+  }
+
+  Widget _depositRouteTile(
+    BuildContext context,
+    String product,
+    String cadence,
+  ) {
+    final index = _depositRoutes['${product.toLowerCase()}-$cadence']!;
+    if (!_visiblePageIndices.contains(index)) return const SizedBox.shrink();
+    final color = _depositProductColor(product);
+    return ListTile(
+      key: Key('navigation-menu-${product.toLowerCase()}-$cadence'),
+      selected: _selectedIndex == index,
+      selectedTileColor: Theme.of(context).colorScheme.primaryContainer,
+      leading: CircleAvatar(
+        radius: 16,
+        backgroundColor: color.withValues(alpha: .12),
+        child: Icon(
+          _depositCadenceIcon(cadence),
+          color: color,
+          size: 18,
+        ),
+      ),
+      title: Text(cadence[0].toUpperCase() + cadence.substring(1)),
+      onTap: () {
+        _selectPage(index);
+        Navigator.of(context).pop();
+      },
+    );
+  }
+
+  Color _depositProductColor(String product) => switch (product) {
+        'FD' => const Color(0xFF3458D4),
+        'RD' => const Color(0xFF8E24AA),
+        _ => const Color(0xFF078A6A),
+      };
+
+  IconData _depositProductIcon(String product) => switch (product) {
+        'FD' => Icons.savings_outlined,
+        'RD' => Icons.event_repeat_rounded,
+        _ => Icons.calendar_month_rounded,
+      };
+
+  IconData _depositCadenceIcon(String cadence) => switch (cadence) {
+        'daily' => Icons.today_rounded,
+        'weekly' => Icons.calendar_view_week_rounded,
+        _ => Icons.calendar_month_rounded,
+      };
+
+  Widget _depositProductGroup(BuildContext context, String product) {
+    final cadences = switch (product) {
+      'FD' => const ['monthly'],
+      'RD' => const ['weekly', 'monthly'],
+      _ => const ['daily', 'weekly', 'monthly'],
+    };
+    final visibleCadences = cadences.where(
+      (cadence) => _visiblePageIndices
+          .contains(_depositRoutes['${product.toLowerCase()}-$cadence']),
+    );
+    if (visibleCadences.isEmpty) return const SizedBox.shrink();
+    final color = _depositProductColor(product);
+    return ExpansionTile(
+      key: Key('navigation-menu-product-${product.toLowerCase()}'),
+      leading: CircleAvatar(
+        radius: 16,
+        backgroundColor: color.withValues(alpha: .12),
+        child: Icon(
+          _depositProductIcon(product),
+          color: color,
+          size: 18,
+        ),
+      ),
+      title: Text(product),
+      children: [
+        for (final cadence in visibleCadences)
+          _depositRouteTile(context, product, cadence),
+      ],
     );
   }
 
@@ -387,6 +491,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     'Monthly Collection',
     'Users List',
     'Roles & Permissions',
+    'FD Monthly',
+    'RD Weekly',
+    'RD Monthly',
+    'DRD Daily',
+    'DRD Weekly',
+    'DRD Monthly',
   ];
 
   List<Widget> get _pages => [
@@ -435,6 +545,23 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           apiService: widget.apiService,
           session: widget.session,
         ),
+        for (final route in [
+          ('FD', 'monthly'),
+          ('RD', 'weekly'),
+          ('RD', 'monthly'),
+          ('DRD', 'daily'),
+          ('DRD', 'weekly'),
+          ('DRD', 'monthly'),
+        ])
+          DepositAccountPage(
+            key: ValueKey(
+              'deposit-${route.$1.toLowerCase()}-${route.$2}-$_refreshVersion',
+            ),
+            apiService: widget.apiService,
+            session: widget.session,
+            product: route.$1,
+            cadence: route.$2,
+          ),
       ];
 
   @override
@@ -599,9 +726,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                   children: [
                     for (final index in _visiblePageIndices)
                       if (index < 2) _navigationMenuTile(context, index),
-                    if (_visiblePageIndices.any(
-                      (index) => index >= 2 && index <= 4,
-                    ))
+                    if (_visiblePageIndices.any((index) => index >= 7))
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: ExpansionTile(
@@ -626,27 +751,48 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
                           childrenPadding:
                               const EdgeInsets.symmetric(horizontal: 8),
                           children: [
+                            _depositProductGroup(context, 'FD'),
+                            _depositProductGroup(context, 'RD'),
+                            _depositProductGroup(context, 'DRD'),
+                          ],
+                        ),
+                      ),
+                    if (_visiblePageIndices.any(
+                      (index) => index >= 2 && index <= 4,
+                    ))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: ExpansionTile(
+                          key: const Key(
+                            'navigation-menu-existing-collections',
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          collapsedShape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          leading: CircleAvatar(
+                            radius: 18,
+                            backgroundColor:
+                                const Color(0xFF00897B).withValues(alpha: .12),
+                            child: const Icon(
+                              Icons.collections_bookmark_outlined,
+                              color: Color(0xFF00897B),
+                              size: 20,
+                            ),
+                          ),
+                          title: const Text('D/W/M Collection'),
+                          children: [
                             for (final index in _visiblePageIndices)
                               if (index >= 2 && index <= 4)
                                 _navigationMenuTile(context, index),
-                            const Padding(
-                              padding: EdgeInsets.only(bottom: 4),
-                              child: ListTile(
-                                key: Key('navigation-menu-drd'),
-                                enabled: false,
-                                leading: CircleAvatar(
-                                  radius: 18,
-                                  child: Text('D'),
-                                ),
-                                title: Text('DRD'),
-                                subtitle: Text('Coming soon'),
-                              ),
-                            ),
                           ],
                         ),
                       ),
                     for (final index in _visiblePageIndices)
-                      if (index > 4) _navigationMenuTile(context, index),
+                      if (index == 5 || index == 6)
+                        _navigationMenuTile(context, index),
                   ],
                 ),
               ),

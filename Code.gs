@@ -13,6 +13,8 @@ const ROLE_PERMISSION_KEYS = Object.freeze([
   'shared_data_read',
   'own_collection_read',
   'collection_manage',
+  'deposit_view',
+  'deposit_manage',
   'ledger_manage',
   'user_manage',
 ]);
@@ -48,6 +50,21 @@ const SHEETS = Object.freeze({
   Daily_Collection: collectionHeaders_(365),
   Weekly_Collection: collectionHeaders_(52),
   Monthly_Collection: collectionHeaders_(12),
+  Deposit_Accounts: [
+    'id',
+    'memberName',
+    'product',
+    'cadence',
+    'startDate',
+    'amount',
+    'annualRate',
+    'tenureMonths',
+    'maturityDate',
+    'maturityAmount',
+    'payments',
+    'createdAt',
+    'createdBy',
+  ],
 });
 
 function collectionHeaders_(count) {
@@ -409,6 +426,14 @@ function dispatch_(request) {
         'Monthly_Collection',
         requireCollectionRead_(request.token, 'monthlyAccess'),
       );
+    case 'getDepositAccounts': {
+      const { product, cadence } = validateDepositProductCadence_(
+        request.product,
+        request.cadence,
+      );
+      const user = requireDepositRead_(request.token, cadence);
+      return readDepositAccounts_(product, cadence, user);
+    }
     case 'getUsers':
       requireAnyPermission_(request.token, ['shared_data_read', 'user_manage']);
       return readUsers_();
@@ -433,6 +458,19 @@ function dispatch_(request) {
     case 'toggleCollection':
       requirePermission_(request.token, 'collection_manage');
       return withScriptLock_(() => toggleCollection_(request));
+    case 'addDepositAccount': {
+      const user = requirePermission_(request.token, 'deposit_manage');
+      return withScriptLock_(() => addDepositAccount_(request, user));
+    }
+    case 'editDepositAccount':
+      requirePermission_(request.token, 'deposit_manage');
+      return withScriptLock_(() => editDepositAccount_(request));
+    case 'toggleDepositPayment':
+      requirePermission_(request.token, 'deposit_manage');
+      return withScriptLock_(() => toggleDepositPayment_(request));
+    case 'deleteDepositAccount':
+      requirePermission_(request.token, 'deposit_manage');
+      return withScriptLock_(() => deleteDepositAccount_(request));
     case 'addUser':
       {
         const user = requirePermission_(request.token, 'user_manage');
@@ -565,7 +603,10 @@ function defaultRolePermissions_() {
 
 function memberRolePermissions_() {
   return Object.fromEntries(
-    ROLE_PERMISSION_KEYS.map((key) => [key, key === 'own_collection_read']),
+    ROLE_PERMISSION_KEYS.map((key) => [
+      key,
+      key === 'own_collection_read' || key === 'deposit_view',
+    ]),
   );
 }
 
@@ -577,9 +618,34 @@ function normalizeMemberRolePermissions_(permissions) {
         ? permissions.own_collection_read
         : true,
     collection_manage: false,
+    deposit_view: permissions.deposit_view === true,
+    deposit_manage: false,
     ledger_manage: false,
     user_manage: false,
   };
+}
+
+function legacyDepositPermissionDefault_(role, key, permissions) {
+  if (key === 'deposit_manage') {
+    return role !== 'Member' && permissions.collection_manage === true;
+  }
+  if (key === 'deposit_view') {
+    return (
+      permissions.shared_data_read === true ||
+      permissions.own_collection_read === true ||
+      permissions.collection_manage === true
+    );
+  }
+  return undefined;
+}
+
+function rolePermissionFromRecord_(record, role, key) {
+  const value = record[key];
+  if (value === '' || value === null || value === undefined) {
+    const legacyDefault = legacyDepositPermissionDefault_(role, key, record);
+    if (legacyDefault !== undefined) return legacyDefault;
+  }
+  return parseRolePermissionValue_(value, role, key);
 }
 
 function rolePermissions_() {
@@ -601,7 +667,7 @@ function rolePermissions_() {
         Object.fromEntries(
           ROLE_PERMISSION_KEYS.map((key) => [
             key,
-            parseRolePermissionValue_(record[key], role, key),
+            rolePermissionFromRecord_(record, role, key),
           ]),
         ),
       ];
@@ -679,7 +745,7 @@ function initializeRolePermissionsSheet_() {
       settings = Object.fromEntries(
         ROLE_PERMISSION_KEYS.map((key) => [
           key,
-          parseRolePermissionValue_(matchingRecords[0][key], role, key),
+          rolePermissionFromRecord_(matchingRecords[0], role, key),
         ]),
       );
     } else {
@@ -732,6 +798,23 @@ function rolePermissionsFromProperties_() {
       Object.fromEntries(
         ROLE_PERMISSION_KEYS.map((key) => {
           const value = parsed && parsed[role] && parsed[role][key];
+          if (
+            (value === undefined || value === null) &&
+            legacyDepositPermissionDefault_(
+              role,
+              key,
+              parsed && parsed[role] ? parsed[role] : {},
+            ) !== undefined
+          ) {
+            return [
+              key,
+              legacyDepositPermissionDefault_(
+                role,
+                key,
+                parsed && parsed[role] ? parsed[role] : {},
+              ),
+            ];
+          }
           if (typeof value !== 'boolean') {
             throw new Error(
               `Stored permission ${key} for ${role} must be true or false.`,
@@ -1155,6 +1238,387 @@ function readAmount_() {
     ...record,
     date: formatDate_(record.date),
   }));
+}
+
+const DEPOSIT_CADENCES = Object.freeze({
+  FD: ['monthly'],
+  RD: ['weekly', 'monthly'],
+  DRD: ['daily', 'weekly', 'monthly'],
+});
+const MAX_DEPOSIT_TENURE_MONTHS = 120;
+
+function validDepositProduct_(value) {
+  const product = String(value || '').toUpperCase();
+  if (!Object.prototype.hasOwnProperty.call(DEPOSIT_CADENCES, product)) {
+    throw new Error('Select a valid deposit product.');
+  }
+  return product;
+}
+
+function validDepositCadence_(value) {
+  const cadence = String(value || '').toLowerCase();
+  if (!['daily', 'weekly', 'monthly'].includes(cadence)) {
+    throw new Error('Select a valid deposit frequency.');
+  }
+  return cadence;
+}
+
+function validateDepositProductCadence_(productValue, cadenceValue) {
+  const product = validDepositProduct_(productValue);
+  const cadence = validDepositCadence_(cadenceValue);
+  if (!DEPOSIT_CADENCES[product].includes(cadence)) {
+    throw new Error(`${product} is not available with ${cadence} payments.`);
+  }
+  return { product, cadence };
+}
+
+function depositMaturityDate_(startDate, tenureMonths) {
+  const [year, month, day] = startDate.split('-').map(Number);
+  const targetMonth = month - 1 + tenureMonths;
+  const targetYear = year + Math.floor(targetMonth / 12);
+  const targetMonthIndex = targetMonth % 12;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonthIndex + 1, 0)).getUTCDate();
+  const maturity = new Date(
+    Date.UTC(targetYear, targetMonthIndex, Math.min(day, lastDay)),
+  );
+  return Utilities.formatDate(maturity, 'UTC', 'yyyy-MM-dd');
+}
+
+function depositPeriodDates_(startDate, maturityDate, cadence) {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const maturity = new Date(`${maturityDate}T00:00:00Z`);
+  const dates = [];
+  if (cadence === 'monthly') {
+    const startDay = start.getUTCDate();
+    for (let period = 1; period <= MAX_DEPOSIT_TENURE_MONTHS; period++) {
+      const targetMonth = start.getUTCMonth() + period;
+      const targetYear = start.getUTCFullYear() + Math.floor(targetMonth / 12);
+      const targetMonthIndex = targetMonth % 12;
+      const lastDay = new Date(
+        Date.UTC(targetYear, targetMonthIndex + 1, 0),
+      ).getUTCDate();
+      const dueDate = new Date(
+        Date.UTC(targetYear, targetMonthIndex, Math.min(startDay, lastDay)),
+      );
+      if (dueDate > maturity) break;
+      dates.push(Utilities.formatDate(dueDate, 'UTC', 'yyyy-MM-dd'));
+    }
+    return dates;
+  }
+
+  const daysPerPeriod = cadence === 'weekly' ? 7 : 1;
+  for (
+    let dueDate = new Date(start.getTime() + daysPerPeriod * 86400000);
+    dueDate <= maturity;
+    dueDate = new Date(dueDate.getTime() + daysPerPeriod * 86400000)
+  ) {
+    dates.push(Utilities.formatDate(dueDate, 'UTC', 'yyyy-MM-dd'));
+  }
+  return dates;
+}
+
+function calculateDepositMaturity_(
+  product,
+  cadence,
+  amount,
+  annualRate,
+  tenureMonths,
+  periodCount,
+) {
+  const rate = annualRate / 100;
+  if (product === 'FD') {
+    return roundCurrency_(amount * Math.pow(1 + rate / 12, tenureMonths));
+  }
+  const periodsPerYear =
+    cadence === 'daily' ? 365 : cadence === 'weekly' ? 52 : 12;
+  const periodRate = rate / periodsPerYear;
+  const maturity =
+    periodRate === 0
+      ? amount * periodCount
+      : amount * (Math.pow(1 + periodRate, periodCount) - 1) / periodRate;
+  return roundCurrency_(maturity);
+}
+
+function roundCurrency_(value) {
+  if (!Number.isFinite(value)) throw new Error('Maturity amount is too large.');
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function depositAccountInput_(request) {
+  const { product, cadence } = validateDepositProductCadence_(
+    request.product,
+    request.cadence,
+  );
+  const memberName = cleanText_(request.memberName, CONFIG.maxNameLength);
+  if (!memberName) throw new Error('Member name is required.');
+  const startDate = parseDateField_(request.startDate, 'Start date');
+  const amount = parseNonNegativeNumber_(
+    request.amount,
+    product === 'FD' ? 'Principal amount' : 'Installment amount',
+  );
+  if (amount <= 0) throw new Error('Amount must be greater than zero.');
+  const annualRate = parseNonNegativeNumber_(
+    request.annualRate,
+    'Annual interest rate',
+  );
+  if (annualRate > 100) {
+    throw new Error('Annual interest rate cannot exceed 100%.');
+  }
+  const tenureMonths = Number(request.tenureMonths);
+  if (
+    !Number.isInteger(tenureMonths) ||
+    tenureMonths < 1 ||
+    tenureMonths > MAX_DEPOSIT_TENURE_MONTHS
+  ) {
+    throw new Error(
+      `Tenure must be between 1 and ${MAX_DEPOSIT_TENURE_MONTHS} months.`,
+    );
+  }
+  const maturityDate = depositMaturityDate_(startDate, tenureMonths);
+  const periodDates =
+    product === 'FD'
+      ? []
+      : depositPeriodDates_(startDate, maturityDate, cadence);
+  const payments = periodDates.map(() => false);
+  const maturityAmount = calculateDepositMaturity_(
+    product,
+    cadence,
+    amount,
+    annualRate,
+    tenureMonths,
+    periodDates.length,
+  );
+  return {
+    memberName,
+    product,
+    cadence,
+    startDate,
+    amount,
+    annualRate,
+    tenureMonths,
+    maturityDate,
+    maturityAmount,
+    payments,
+    periodDates,
+  };
+}
+
+function addDepositAccount_(request, user) {
+  const input = depositAccountInput_(request);
+  const sheet = getSpreadsheet_().getSheetByName('Deposit_Accounts');
+  if (!sheet) {
+    throw new Error('Deposit_Accounts sheet is missing. Run setupAccountPortal.');
+  }
+  appendRecord_(sheet, getHeaders_(sheet), {
+    id: Utilities.getUuid(),
+    ...input,
+    payments: JSON.stringify(input.payments),
+    createdAt: new Date(),
+    createdBy: user.id,
+  });
+  return { status: 'success' };
+}
+
+function editDepositAccount_(request) {
+  const id = requiredText_(request.id, 'Deposit account ID');
+  const sheet = getSpreadsheet_().getSheetByName('Deposit_Accounts');
+  if (!sheet) {
+    throw new Error('Deposit_Accounts sheet is missing. Run setupAccountPortal.');
+  }
+  const rowIndex = depositAccountRow_(id, sheet);
+  if (!rowIndex) throw new Error('Deposit account not found.');
+
+  const headers = getHeaders_(sheet);
+  const existing = rowToObject_(
+    headers,
+    sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0],
+  );
+  const input = depositAccountInput_(request);
+  if (
+    existing.product !== input.product ||
+    existing.cadence !== input.cadence
+  ) {
+    throw new Error('A deposit account product and cadence cannot be changed.');
+  }
+
+  const oldStartDate = formatDate_(existing.startDate);
+  const oldMaturityDate = formatDate_(existing.maturityDate);
+  const oldDates =
+    input.product === 'FD'
+      ? []
+      : depositPeriodDates_(oldStartDate, oldMaturityDate, input.cadence);
+  let oldPayments;
+  try {
+    oldPayments = JSON.parse(String(existing.payments || '[]'));
+  } catch (error) {
+    console.error(`Invalid payment schedule for deposit ${id}.`, error);
+    throw new Error('The deposit payment schedule is invalid.');
+  }
+  const newDates =
+    input.product === 'FD'
+      ? []
+      : depositPeriodDates_(input.startDate, input.maturityDate, input.cadence);
+  const payments = preserveDepositPayments_(oldPayments, oldDates, newDates);
+  const updated = Object.assign({}, existing, input, {
+    id,
+    payments: JSON.stringify(payments),
+  });
+  sheet
+    .getRange(rowIndex, 1, 1, headers.length)
+    .setValues([
+      headers.map((header) =>
+        Object.prototype.hasOwnProperty.call(updated, header)
+          ? safeCellValue_(updated[header])
+          : '',
+      ),
+    ]);
+  return { status: 'success' };
+}
+
+function preserveDepositPayments_(payments, oldDates, newDates) {
+  if (
+    !Array.isArray(payments) ||
+    payments.length !== oldDates.length ||
+    payments.some((paid) => typeof paid !== 'boolean')
+  ) {
+    throw new Error('The deposit payment schedule is invalid.');
+  }
+  const paidDates = new Set(
+    oldDates.filter((date, index) => payments[index]),
+  );
+  const newDateSet = new Set(newDates);
+  if ([...paidDates].some((date) => !newDateSet.has(date))) {
+    throw new Error(
+      'This edit would remove a paid installment date. Keep the existing paid dates in the schedule.',
+    );
+  }
+  const paymentsByDate = new Map(
+    oldDates.map((date, index) => [date, payments[index]]),
+  );
+  return newDates.map((date) => paymentsByDate.get(date) === true);
+}
+
+function readDepositAccounts_(productValue, cadence, user) {
+  const { product, cadence: validCadence } = validateDepositProductCadence_(
+    productValue,
+    cadence,
+  );
+  const memberName = normalizeMemberName_(user.name);
+  return readRecords_('Deposit_Accounts')
+    .filter(
+      (record) =>
+        record.product === product &&
+        record.cadence === validCadence &&
+        (user.role !== 'Member' ||
+          normalizeMemberName_(record.memberName) === memberName),
+    )
+    .map((record) => {
+      let payments;
+      try {
+        payments = JSON.parse(String(record.payments || '[]'));
+      } catch (error) {
+        console.error(`Invalid payment schedule for deposit ${record.id}.`, error);
+        throw new Error('A deposit payment schedule is invalid. Contact an administrator.');
+      }
+      if (
+        !Array.isArray(payments) ||
+        payments.some((paid) => typeof paid !== 'boolean')
+      ) {
+        throw new Error('A deposit payment schedule is invalid. Contact an administrator.');
+      }
+      const startDate = formatDate_(record.startDate);
+      const maturityDate = formatDate_(record.maturityDate);
+      const periodDates =
+        product === 'FD'
+          ? []
+          : depositPeriodDates_(startDate, maturityDate, validCadence);
+      if (payments.length !== periodDates.length) {
+        throw new Error('A deposit payment schedule is invalid. Contact an administrator.');
+      }
+      return {
+        id: String(record.id || ''),
+        memberName: String(record.memberName || ''),
+        product,
+        cadence: validCadence,
+        startDate,
+        amount: Number(record.amount) || 0,
+        annualRate: Number(record.annualRate) || 0,
+        tenureMonths: Number(record.tenureMonths) || 0,
+        maturityDate,
+        maturityAmount: Number(record.maturityAmount) || 0,
+        payments,
+        periodDates,
+      };
+    });
+}
+
+function depositAccountRow_(id, sheet) {
+  const headers = getHeaders_(sheet);
+  const idColumn = headers.indexOf('id') + 1;
+  if (idColumn < 1 || sheet.getLastRow() < 2) return 0;
+  const values = sheet
+    .getRange(2, idColumn, sheet.getLastRow() - 1, 1)
+    .getValues();
+  const index = values.findIndex((row) => String(row[0]) === String(id));
+  return index < 0 ? 0 : index + 2;
+}
+
+function toggleDepositPayment_(request) {
+  const id = requiredText_(request.id, 'Deposit account ID');
+  const sheet = getSpreadsheet_().getSheetByName('Deposit_Accounts');
+  const rowIndex = depositAccountRow_(id, sheet);
+  if (!rowIndex) throw new Error('Deposit account not found.');
+  const headers = getHeaders_(sheet);
+  const row = rowToObject_(
+    headers,
+    sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0],
+  );
+  if (row.product === 'FD') {
+    throw new Error('Fixed deposits do not have recurring payment periods.');
+  }
+  const { product, cadence } = validateDepositProductCadence_(
+    row.product,
+    row.cadence,
+  );
+  const periodIndex = Number(request.periodIndex);
+  const periodDates = depositPeriodDates_(
+    formatDate_(row.startDate),
+    formatDate_(row.maturityDate),
+    cadence,
+  );
+  if (
+    !Number.isInteger(periodIndex) ||
+    periodIndex < 1 ||
+    periodIndex > periodDates.length
+  ) {
+    throw new Error('Invalid deposit payment period.');
+  }
+  let payments;
+  try {
+    payments = JSON.parse(String(row.payments || '[]'));
+  } catch (error) {
+    console.error(`Invalid payment schedule for deposit ${id}.`, error);
+    throw new Error('The deposit payment schedule is invalid.');
+  }
+  if (
+    !Array.isArray(payments) ||
+    payments.length !== periodDates.length ||
+    payments.some((paid) => typeof paid !== 'boolean')
+  ) {
+    throw new Error('The deposit payment schedule is invalid.');
+  }
+  payments[periodIndex - 1] = !payments[periodIndex - 1];
+  setField_(sheet, rowIndex, headers, 'payments', JSON.stringify(payments));
+  return { status: 'success', product, cadence };
+}
+
+function deleteDepositAccount_(request) {
+  const id = requiredText_(request.id, 'Deposit account ID');
+  const sheet = getSpreadsheet_().getSheetByName('Deposit_Accounts');
+  const rowIndex = depositAccountRow_(id, sheet);
+  if (!rowIndex) throw new Error('Deposit account not found.');
+  sheet.deleteRow(rowIndex);
+  return { status: 'success' };
 }
 
 function addCollection_(request) {
@@ -1627,6 +2091,26 @@ function requireCollectionRead_(token, reportAccessField) {
     !permissions.collection_manage
   ) {
     throw new Error('You do not have permission to view collection data.');
+  }
+  return user;
+}
+
+function requireDepositRead_(token, cadence) {
+  const user = requireRole_(token, PORTAL_ROLES);
+  const reportAccessField = `${cadence}Access`;
+  if (
+    user.role === 'Member' &&
+    !isReportAccessEnabled_(user[reportAccessField])
+  ) {
+    throw new Error('This report is inactive for your account.');
+  }
+  const permissions = permissionsForUser_(user);
+  if (
+    user.role !== 'Admin' &&
+    !permissions.deposit_view &&
+    !permissions.deposit_manage
+  ) {
+    throw new Error('You do not have permission to view deposit accounts.');
   }
   return user;
 }
