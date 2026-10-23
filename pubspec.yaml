@@ -1,0 +1,28 @@
+name: ntccsl
+description: NTCCSL Account Management Application linked with Google Sheets.
+publish_to: 'none'
+version: 1.2.2+2
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  intl: ^0.19.0
+  google_fonts: ^6.1.0
+  image_picker: ^1.2.4
+  package_info_plus: ^8.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  image_picker_platform_interface: ^2.11.2
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/ntccsl_logo.png
+    - assets/images/ntccsl_logo_big.png
