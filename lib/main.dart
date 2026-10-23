@@ -286,10 +286,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         if (_canViewUsers) 5,
         if (_isAdmin) 6,
       ];
-  List<int> get _bottomNavigationPageIndices => _visiblePageIndices
-      .where((index) => index != 1 && index != 6 && index < 7)
-      .toList();
-
   static const _navigationLabels = [
     'Dashboard',
     'Accounts',
@@ -308,9 +304,171 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     });
   }
 
-  void _selectBottomNavigationPage(int destinationIndex) {
-    _selectPage(_bottomNavigationPageIndices[destinationIndex]);
+  bool _canViewCollectionCadence(String cadence) =>
+      _canViewCollections && widget.session.canViewReport(cadence);
+
+  List<int> get _availableDepositRoutes =>
+      _visiblePageIndices.where((index) => index >= 7).toList();
+
+  List<
+      ({
+        String label,
+        IconData icon,
+        IconData selectedIcon,
+        Color color,
+        int? pageIndex,
+      })> get _bottomNavigationItems => [
+        (
+          label: 'Dashboard',
+          icon: _navigationIcons[0],
+          selectedIcon: _navigationSelectedIcons[0],
+          color: _navigationColors[0],
+          pageIndex: 0,
+        ),
+        if (_canViewCollectionCadence('daily'))
+          (
+            label: 'Daily',
+            icon: _navigationIcons[2],
+            selectedIcon: _navigationSelectedIcons[2],
+            color: _navigationColors[2],
+            pageIndex: 2,
+          ),
+        if (_canViewCollectionCadence('weekly'))
+          (
+            label: 'Weekly',
+            icon: _navigationIcons[3],
+            selectedIcon: _navigationSelectedIcons[3],
+            color: _navigationColors[3],
+            pageIndex: 3,
+          ),
+        if (_canViewCollectionCadence('monthly'))
+          (
+            label: 'Monthly',
+            icon: _navigationIcons[4],
+            selectedIcon: _navigationSelectedIcons[4],
+            color: _navigationColors[4],
+            pageIndex: 4,
+          ),
+        if (_availableDepositRoutes.isNotEmpty)
+          (
+            label: 'Deposit',
+            icon: Icons.savings_outlined,
+            selectedIcon: Icons.savings_rounded,
+            color: const Color(0xFF00897B),
+            pageIndex: null,
+          ),
+      ];
+
+  int get _selectedBottomNavigationIndex {
+    final items = _bottomNavigationItems;
+    final index = items.indexWhere(
+      (item) => item.pageIndex == (_selectedIndex >= 7 ? null : _selectedIndex),
+    );
+    if (index >= 0) return index;
+    final depositIndex = items.indexWhere((item) => item.pageIndex == null);
+    return _selectedIndex >= 7 && depositIndex >= 0 ? depositIndex : 0;
   }
+
+  void _onBottomNavigationSelected(int destinationIndex) {
+    final item = _bottomNavigationItems[destinationIndex];
+    final pageIndex = item.pageIndex;
+    if (pageIndex != null) {
+      _selectPage(pageIndex);
+    } else {
+      _showDepositPicker();
+    }
+  }
+
+  Future<void> _showDepositPicker() async {
+    final availableRoutes = _availableDepositRoutes;
+    if (availableRoutes.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final colors = Theme.of(sheetContext).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Deposit accounts',
+                key: const Key('bottom-deposit-picker-title'),
+                style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Choose a scheme to view its accounts.',
+                style: Theme.of(sheetContext).textTheme.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheetContext).height * .62,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final index in availableRoutes)
+                      Builder(
+                        builder: (context) {
+                          final parts = _titles[index].split(' ');
+                          final product = parts.first;
+                          final cadence = parts.last.toLowerCase();
+                          final accent = _depositProductColor(product);
+                          return Card(
+                            key: Key('bottom-deposit-option-$index'),
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: accent.withValues(alpha: .12),
+                                child: Icon(
+                                  _depositCadenceIcon(cadence),
+                                  color: accent,
+                                ),
+                              ),
+                              title: Text('$product · ${_capitalize(cadence)}'),
+                              subtitle: Text(
+                                switch (product) {
+                                  'FD' => 'One-time fixed deposit',
+                                  'RD' => 'Recurring deposit',
+                                  _ => 'Daily recurring deposit',
+                                },
+                              ),
+                              trailing: Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 16,
+                                color: colors.onSurfaceVariant,
+                              ),
+                              onTap: () {
+                                Navigator.of(sheetContext).pop();
+                                _selectPage(index);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _capitalize(String value) =>
+      value[0].toUpperCase() + value.substring(1);
 
   Widget _navigationMenuTile(BuildContext context, int index) {
     return Padding(
@@ -833,28 +991,21 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               const SizedBox(),
         ],
       ),
-      bottomNavigationBar: _bottomNavigationPageIndices.length < 2
-          ? null
-          : NavigationBar(
-              selectedIndex: _bottomNavigationPageIndices
-                  .indexOf(_selectedIndex)
-                  .clamp(0, _bottomNavigationPageIndices.length - 1),
-              onDestinationSelected: _selectBottomNavigationPage,
-              destinations: [
-                for (final index in _bottomNavigationPageIndices)
-                  NavigationDestination(
-                    icon: Icon(
-                      _navigationIcons[index],
-                      color: _navigationColors[index],
-                    ),
-                    selectedIcon: Icon(
-                      _navigationSelectedIcons[index],
-                      color: _navigationColors[index],
-                    ),
-                    label: _navigationLabels[index],
-                  ),
-              ],
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedBottomNavigationIndex,
+        onDestinationSelected: _onBottomNavigationSelected,
+        destinations: [
+          for (final item in _bottomNavigationItems)
+            NavigationDestination(
+              key: ValueKey(
+                'bottom-navigation-${item.label.toLowerCase()}',
+              ),
+              icon: Icon(item.icon, color: item.color),
+              selectedIcon: Icon(item.selectedIcon, color: item.color),
+              label: item.label,
             ),
+        ],
+      ),
     );
   }
 }

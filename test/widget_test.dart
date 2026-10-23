@@ -699,13 +699,20 @@ void main() {
       client.payloads.map((payload) => payload['action']),
       isNot(contains('getMonthly')),
     );
+    expect(_bottomNavigationItems(), findsNWidgets(2));
     expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.byType(NavigationDestination),
-      ),
-      findsNWidgets(2),
+      _bottomNavigationLabels(),
+      {'Dashboard', 'Daily'},
     );
+    expect(
+      find.byKey(const Key('bottom-navigation-weekly')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('bottom-navigation-monthly')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('bottom-navigation-deposit')), findsNothing);
     expect(find.byKey(const Key('navigation-menu-weekly')), findsNothing);
     expect(find.byKey(const Key('navigation-menu-monthly')), findsNothing);
     await _openDrawerPage(tester, 'navigation-menu-daily');
@@ -880,13 +887,10 @@ void main() {
     expect(find.text('Daily'), findsOneWidget);
     expect(find.text('Weekly'), findsOneWidget);
     expect(find.text('Monthly'), findsOneWidget);
-    expect(find.text('Users'), findsOneWidget);
+    expect(_bottomNavigationItems(), findsNWidgets(5));
     expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.byType(NavigationDestination),
-      ),
-      findsNWidgets(5),
+      _bottomNavigationLabels(),
+      {'Dashboard', 'Daily', 'Weekly', 'Monthly', 'Deposit'},
     );
     expect(
       find.descendant(
@@ -900,6 +904,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('ntccsl-app-icon')), findsOneWidget);
     expect(find.byKey(const Key('navigation-menu-accounts')), findsOneWidget);
+    expect(find.byKey(const Key('navigation-menu-users')), findsOneWidget);
     await tester.tap(find.byKey(const Key('close-navigation-menu')));
     await tester.pumpAndSettle();
 
@@ -1099,6 +1104,85 @@ void main() {
     expect(find.text('Signed out successfully.'), findsOneWidget);
   });
 
+  testWidgets('bottom navigation has five role-aware destinations',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainHomeScreen(
+          apiService: _FakeApiService(),
+          session: const AuthSession(
+            token: 'admin-token',
+            userId: 'admin-1',
+            name: 'Test Admin',
+            email: 'admin@example.com',
+            role: 'Admin',
+          ),
+          onLogout: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(_bottomNavigationItems(), findsNWidgets(5));
+    expect(
+      _bottomNavigationLabels(),
+      {'Dashboard', 'Daily', 'Weekly', 'Monthly', 'Deposit'},
+    );
+    expect(find.byKey(const Key('bottom-navigation-scroll')), findsNothing);
+    expect(find.byKey(const Key('bottom-navigation-daily')), findsOneWidget);
+    expect(find.byKey(const Key('bottom-navigation-weekly')), findsOneWidget);
+    expect(find.byKey(const Key('bottom-navigation-monthly')), findsOneWidget);
+    expect(find.byKey(const Key('bottom-navigation-deposit')), findsOneWidget);
+
+    final dailyDestination = find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.text('Daily'),
+    );
+    await tester.tap(dailyDestination);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Daily Collection'), findsOneWidget);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      1,
+    );
+
+    await tester.tap(find.byKey(const Key('bottom-navigation-deposit')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('bottom-deposit-picker-title')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('bottom-deposit-option-7')), findsOneWidget);
+    final lastDepositOption = find.byKey(const Key('bottom-deposit-option-12'));
+    final depositPickerScrollable = find
+        .descendant(
+          of: find.byType(BottomSheet),
+          matching: find.byType(Scrollable),
+        )
+        .last;
+    await tester.scrollUntilVisible(
+      lastDepositOption,
+      100,
+      scrollable: depositPickerScrollable,
+    );
+    expect(find.byKey(const Key('bottom-deposit-option-12')), findsOneWidget);
+    final rdMonthlyOption = find.byKey(const Key('bottom-deposit-option-9'));
+    await tester.scrollUntilVisible(
+      rdMonthlyOption,
+      100,
+      scrollable: depositPickerScrollable,
+    );
+    await tester.tap(rdMonthlyOption);
+    await tester.pumpAndSettle();
+    expect(find.text('Recurring Deposit — Monthly'), findsOneWidget);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      4,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   test('deposit maturity calculations follow the confirmed terms', () {
     final startDate = DateTime(2026, 1, 31);
     final maturityDate = depositMaturityDate(startDate, 12);
@@ -1167,6 +1251,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(_bottomNavigationItems(), findsNWidgets(3));
+    expect(
+      _bottomNavigationLabels(),
+      {'Dashboard', 'Daily', 'Deposit'},
+    );
+    expect(find.byKey(const Key('bottom-navigation-weekly')), findsNothing);
+    expect(find.byKey(const Key('bottom-navigation-monthly')), findsNothing);
+
     await tester.tap(find.byKey(const Key('open-navigation-menu')));
     await tester.pumpAndSettle();
     final deposit = find.byKey(const Key('navigation-menu-deposit'));
@@ -1176,6 +1268,11 @@ void main() {
     expect(find.byKey(const Key('navigation-menu-product-rd')), findsNothing);
     final drd = find.byKey(const Key('navigation-menu-product-drd'));
     await _expandDrawerTile(tester, deposit, drd);
+    await _expandDrawerTile(
+      tester,
+      drd,
+      find.byKey(const Key('navigation-menu-drd-daily')),
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('navigation-menu-drd-daily')), findsOneWidget);
     expect(find.byKey(const Key('navigation-menu-drd-weekly')), findsNothing);
@@ -2124,14 +2221,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(_bottomNavigationItems(), findsNWidgets(5));
     expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.byType(NavigationDestination),
-      ),
-      findsNWidgets(5),
+      _bottomNavigationLabels(),
+      {'Dashboard', 'Daily', 'Weekly', 'Monthly', 'Deposit'},
     );
-    expect(find.text('Users'), findsOneWidget);
     expect(find.byKey(const Key('add-ledger-entry')), findsNothing);
 
     await _openDrawerPage(tester, 'navigation-menu-accounts');
@@ -2217,13 +2311,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(_bottomNavigationItems(), findsNWidgets(2));
     expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.byType(NavigationDestination),
-      ),
-      findsNWidgets(2),
+      _bottomNavigationLabels(),
+      {'Dashboard', 'Daily'},
     );
+    expect(find.byKey(const Key('bottom-navigation-daily')), findsOneWidget);
+    expect(find.byKey(const Key('bottom-navigation-weekly')), findsNothing);
+    expect(find.byKey(const Key('bottom-navigation-monthly')), findsNothing);
+    expect(find.byKey(const Key('bottom-navigation-deposit')), findsNothing);
     expect(find.byKey(const Key('navigation-menu-accounts')), findsNothing);
     expect(find.byKey(const Key('navigation-menu-users')), findsNothing);
     expect(find.byKey(const Key('navigation-menu-weekly')), findsNothing);
@@ -2695,8 +2791,7 @@ void main() {
     await tester.pumpWidget(NtccslAccountApp(apiService: apiService));
     await _signIn(tester);
 
-    await tester.tap(find.text('Users'));
-    await tester.pumpAndSettle();
+    await _openDrawerPage(tester, 'navigation-menu-users');
     expect(find.text('Morgan Member'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('add-user')));
@@ -2998,6 +3093,12 @@ void main() {
     await tester
         .tap(find.byKey(const Key('navigation-menu-roles & permissions')));
     await tester.pumpAndSettle();
+    final permissionsScrollable = find
+        .descendant(
+          of: find.byType(RefreshIndicator).last,
+          matching: find.byType(Scrollable),
+        )
+        .first;
 
     expect(find.text('Roles & Permissions'), findsNWidgets(2));
     expect(
@@ -3018,7 +3119,7 @@ void main() {
     await tester.scrollUntilVisible(
       collectorLedgerPermission,
       300,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: permissionsScrollable,
     );
     final collectorPermission =
         tester.widget<SwitchListTile>(collectorLedgerPermission);
@@ -3032,7 +3133,7 @@ void main() {
     await tester.scrollUntilVisible(
       memberCollectionPermission,
       300,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: permissionsScrollable,
     );
     final memberCollectionSwitch =
         tester.widget<SwitchListTile>(memberCollectionPermission);
@@ -3044,7 +3145,7 @@ void main() {
     await tester.scrollUntilVisible(
       memberSharedReadPermission,
       300,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: permissionsScrollable,
     );
     await Scrollable.ensureVisible(
       tester.element(memberSharedReadPermission),
@@ -3072,7 +3173,7 @@ void main() {
     await tester.scrollUntilVisible(
       memberOwnReadPermission,
       300,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: permissionsScrollable,
     );
     final memberOwnReadSwitch =
         tester.widget<SwitchListTile>(memberOwnReadPermission);
@@ -3084,7 +3185,7 @@ void main() {
     await tester.scrollUntilVisible(
       memberDepositViewPermission,
       300,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: permissionsScrollable,
     );
     await Scrollable.ensureVisible(
       tester.element(memberDepositViewPermission),
@@ -3807,6 +3908,16 @@ Future<void> _signIn(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('login-submit')));
   await tester.pumpAndSettle();
 }
+
+Finder _bottomNavigationItems() => find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.byType(NavigationDestination),
+    );
+
+Set<String> _bottomNavigationLabels() => _bottomNavigationItems()
+    .evaluate()
+    .map((element) => (element.widget as NavigationDestination).label)
+    .toSet();
 
 Future<void> _openDrawerPage(WidgetTester tester, String itemKey) async {
   await tester.tap(find.byKey(const Key('open-navigation-menu')));
