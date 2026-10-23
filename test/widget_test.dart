@@ -676,6 +676,7 @@ void main() {
 
     await tester.tap(find.text('Member Login'));
     await tester.pumpAndSettle();
+    expect(find.text('Email or account number'), findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('login-email')),
       'jordan@example.com',
@@ -689,6 +690,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(client.payloads.first['loginType'], 'member');
+    expect(client.payloads.first['identifier'], 'jordan@example.com');
     expect(client.payloads.first['email'], 'jordan@example.com');
     expect(client.payloads.first['password'], 'member-password');
     expect(
@@ -3629,6 +3631,35 @@ void main() {
         ),
       ),
     );
+    expect(client.payloads.single['loginType'], 'member');
+  });
+
+  test('member login accepts account number as the identifier', () async {
+    final client = _RecordingHttpClient([
+      {
+        'status': 'success',
+        'token': 'member-session-token',
+        'user': {
+          'id': 'member-1',
+          'accountNo': 'DRD000000001',
+          'name': 'Jordan Member',
+          'email': 'jordan@example.com',
+          'role': 'Member',
+        },
+      },
+    ]);
+    final apiService = ApiService(client: client);
+
+    final session = await apiService.login(
+      'DRD000000001',
+      'member-password',
+      loginType: 'member',
+    );
+
+    expect(session.role, 'Member');
+    expect(session.accountNumber, 'DRD000000001');
+    expect(client.payloads.single['identifier'], 'DRD000000001');
+    expect(client.payloads.single['email'], 'DRD000000001');
     expect(client.payloads.single['loginType'], 'member');
   });
 

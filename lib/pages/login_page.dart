@@ -232,16 +232,33 @@ class _LoginPageState extends State<LoginPage> {
                               TextFormField(
                                 key: const Key('login-email'),
                                 controller: _emailController,
-                                keyboardType: TextInputType.emailAddress,
+                                keyboardType: _loginType == 'member'
+                                    ? TextInputType.text
+                                    : TextInputType.emailAddress,
                                 autofillHints: const [AutofillHints.username],
-                                decoration: const InputDecoration(
-                                  labelText: 'Email address',
-                                  prefixIcon: Icon(Icons.email_outlined),
+                                decoration: InputDecoration(
+                                  labelText: _loginType == 'member'
+                                      ? 'Email or account number'
+                                      : 'Email address',
+                                  prefixIcon: Icon(
+                                    _loginType == 'member'
+                                        ? Icons.person_outline_rounded
+                                        : Icons.email_outlined,
+                                  ),
                                 ),
-                                validator: (value) =>
-                                    value == null || !value.trim().contains('@')
-                                        ? 'Enter a valid email address'
-                                        : null,
+                                validator: (value) {
+                                  final identifier = value?.trim() ?? '';
+                                  if (identifier.isEmpty) {
+                                    return _loginType == 'member'
+                                        ? 'Enter your email or account number'
+                                        : 'Enter your email address';
+                                  }
+                                  if (_loginType == 'staff' &&
+                                      !identifier.contains('@')) {
+                                    return 'Enter a valid email address';
+                                  }
+                                  return null;
+                                },
                               ),
                               const SizedBox(height: 12),
                               TextFormField(

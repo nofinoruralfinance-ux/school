@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 const String kGoogleAppScriptUrl = String.fromEnvironment(
   'GOOGLE_SCRIPT_URL',
   defaultValue:
-      'https://script.google.com/macros/s/AKfycbymG8LIeRjaLqBLxny1OAmrb0k8LBen4w-nhSRTxFJLTg5acjWALwFWQHDUStYsWvgs/exec',
+      'https://script.google.com/macros/s/AKfycbzTyeGbg6swtTAumqN8oGSdEtJ0uNG5MuW3H1UW1lO3iy1AbdxGQlKZkCqYfa0JEVDd/exec',
 );
 
 class AuthSession {
@@ -169,17 +169,21 @@ class ApiService {
   }
 
   Future<AuthSession> login(
-    String email,
+    String identifier,
     String password, {
     String loginType = 'staff',
   }) async {
     if (loginType != 'staff' && loginType != 'member') {
       throw const ApiException('Select a valid account type to sign in.');
     }
+    final normalizedIdentifier = identifier.trim();
     final data = await _request(
       {
         'action': 'login',
-        'email': email.trim(),
+        'identifier': normalizedIdentifier,
+        // Keep `email` for compatibility with Apps Script deployments that
+        // have not yet been updated to read the identifier field.
+        'email': normalizedIdentifier,
         'password': password,
         'loginType': loginType,
       },

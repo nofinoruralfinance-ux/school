@@ -521,18 +521,27 @@ function register_(request) {
 }
 
 function login_(request) {
-  const email = normalizeEmail_(request.email);
+  const identifier = String(request.identifier || request.email || '').trim();
+  const loginType = String(request.loginType || '');
   const password = String(request.password || '');
-  if (!email || !password) throw new Error('Enter your email and password.');
+  if (!identifier || !password) {
+    throw new Error('Enter your email or account number and password.');
+  }
+  const normalizedIdentifier = identifier.includes('@')
+    ? normalizeEmail_(identifier)
+    : identifier.toUpperCase();
 
   const cache = CacheService.getScriptCache();
-  const attemptKey = `login:${sha256Hex_(email)}`;
+  const attemptKey = `login:${sha256Hex_(normalizedIdentifier)}`;
   const attempts = Number(cache.get(attemptKey) || 0);
   if (attempts >= CONFIG.loginAttemptsBeforeLock) {
     throw new Error('Too many sign-in attempts. Try again in 15 minutes.');
   }
 
-  const user = findUserByEmail_(email);
+  const user =
+    loginType === 'member' && !identifier.includes('@')
+      ? findUserByAccountNumber_(normalizedIdentifier)
+      : findUserByEmail_(normalizeEmail_(identifier));
   const candidate = passwordHash_(
     password,
     user ? user.passwordSalt : 'unknown-user-salt',
@@ -547,7 +556,6 @@ function login_(request) {
     throw new Error('Invalid email or password.');
   }
 
-  const loginType = String(request.loginType || '');
   if (
     (loginType === 'member' && user.role !== 'Member') ||
     (loginType === 'staff' &&
@@ -2118,6 +2126,12 @@ function requireDepositRead_(token, cadence) {
 function findUserByEmail_(email) {
   return readRecords_('Users').find(
     (user) => normalizeEmail_(user.email) === email,
+  );
+}
+
+function findUserByAccountNumber_(accountNumber) {
+  return readRecords_('Users').find(
+    (user) => String(user.accountNo || '').trim().toUpperCase() === accountNumber,
   );
 }
 
